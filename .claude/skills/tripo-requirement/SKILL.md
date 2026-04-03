@@ -17,9 +17,10 @@ description: |
 ## 流程概览
 
 ```
-1.接收 → 2.录入 → 3.评审 → 4.执行 → 5.技评 → 6.开发 → 7.PR → 8.测试 → 9.上线
-   │         │         │         │         │         │        │        │
- 创建目录   入需求池   输出文档   执行表    技术方案  worktree  PR审查   完成
+1.接收 → 2.录入 → 3.评审 → 4.执行 → 5.技评 → 6.开发 → 7.PR → 8.闭环 → 9.验收 → 10.上线
+   │         │         │         │         │         │        │        │        │
+ 创建目录   入需求池   输出文档   执行表    技术方案  worktree  创建PR   自动验证  客户验收  发布
+                      🔔通知              🔔通知                       🔔通知    🔔通知
 ```
 
 ## 双表联动
@@ -29,7 +30,7 @@ description: |
 | 录入 | 未启动 | - |
 | 定容 | 定容确认 | - |
 | 开发 | 开发/交付中 | 研发中 |
-| 测试 | 验收/提测中 | 测试中 |
+| 提测 | 提测中 | 测试中 |
 | 完成 | 已完成 | 完成 |
 
 ## 步骤详解
@@ -42,9 +43,10 @@ description: |
 | 4 | 进入执行表 | [steps/4-enter-execution.md](references/steps/4-enter-execution.md) |
 | 5 | 技术评审 | [steps/5-tech-review.md](references/steps/5-tech-review.md) |
 | 6 | 编码开发 | [steps/6-develop.md](references/steps/6-develop.md) |
-| 7 | 提交 PR | [steps/7-pr.md](references/steps/7-pr.md) |
-| 8 | 测试验收 | [steps/8-test.md](references/steps/8-test.md) |
-| 9 | 发布上线 | [steps/9-release.md](references/steps/9-release.md) |
+| 7 | 创建 PR | [steps/7-pr.md](references/steps/7-pr.md) |
+| 8 | 自动化闭环 | [steps/8-test.md](references/steps/8-test.md) |
+| 9 | 用户验收 | [steps/9-acceptance.md](references/steps/9-acceptance.md) |
+| 10 | 发布上线 | [steps/10-release.md](references/steps/10-release.md) |
 
 ## 状态同步规则
 
@@ -57,18 +59,24 @@ description: |
 确认？
 ```
 
-## 模板
+## 飞书通知
 
-| 模板 | 用途 |
-|------|------|
-| [templates/review.md](references/templates/review.md) | 需求评审文档 |
-| [templates/technical-solution.md](references/templates/technical-solution.md) | 技术方案文档 |
+在以下 **4 个关键决策节点**，通过飞书私聊通知用户，然后暂停等待确认：
+
+| 节点 | 步骤 | 触发时机 |
+|------|------|---------|
+| 需求评审确认 | 3 | review.md 输出后 |
+| 技术评审确认 | 5 | technical-solution.md 输出后 |
+| 自动化闭环完成 | 8 | Review + 测试通过后 |
+| 上线前确认 | 10 | 用户验收通过后 |
+
+详见 [notification.md](references/notification.md)。
 
 ## 异常处理
 
 - **需求变更**: 暂停 → 更新描述 → 重新定容
-- **开发阻塞**: 标记"风险" → 通知 Owner
-- **开发超期**: 更新预期时间 → 通知 Owner
+- **开发阻塞**: 标记"风险" → 飞书通知 Owner
+- **开发超期**: 更新预期时间 → 飞书通知 Owner
 
 ## 相关文档
 
