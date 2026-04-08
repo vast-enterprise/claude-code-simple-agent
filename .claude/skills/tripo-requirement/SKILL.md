@@ -52,19 +52,6 @@ description: |
 
 **原则**: 提议 + 确认
 
-### 双写回策略
-
-状态变更时同时更新两个地方：
-
-| 通道 | 介质 | 参考 |
-|------|------|------|
-| 飞书表格（主） | 飞书多维表格 | `tripo-tables` skill |
-| 本地记录（辅） | tasks/STATUS.md | `tripo-task-tracking` skill |
-
-- 飞书表格为主，STATUS.md 为辅助记录
-- **飞书表格写入失败时**：STATUS.md 标记 ⚠️ 并注明失败原因，继续流程，不阻塞
-- 两者的状态应保持同步，但允许 STATUS.md 记录更多上下文（如 PR 编号、备注）
-
 ```
 📋 状态变更提议
 需求: <描述>
@@ -72,18 +59,16 @@ description: |
 确认？
 ```
 
-## 飞书通知
+## 飞书通知阻塞点
 
-在以下 **4 个关键决策节点**，通过飞书私聊通知用户，然后暂停等待确认：
+流程中有 4 个阻塞点，通知后必须暂停等待用户确认（详见 [notification.md](references/notification.md)）：
 
-| 节点 | 步骤 | 触发时机 |
-|------|------|---------|
-| 需求评审确认 | 3 | review.md 输出后 |
-| 技术评审确认 | 5 | technical-solution.md 输出后 |
-| 自动化闭环完成 | 8 | Review + 测试通过后 |
-| 上线前确认 | 10 | 用户验收通过后 |
-
-详见 [notification.md](references/notification.md)。
+| 步骤 | 触发时机 |
+|------|---------|
+| 3 | review.md 输出后 |
+| 5 | technical-solution.md 输出后 |
+| 8 | Review + 测试通过后 |
+| 10 | 用户验收通过后 |
 
 ## 异常处理
 
