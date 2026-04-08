@@ -2,11 +2,7 @@
 
 ## 表格 Token
 
-| 表格 | Base Token | Table ID |
-|------|------------|----------|
-| 产品需求池 | `HMvbbjDHOaHyc6sZny6cMRT8n8b` | `tblb9E9PQHP79JHE` |
-| 技术需求池 | `OCNcbuwpta7qc7sxAPOcSpngnbg` | `tblkb1Saexm0njaE` |
-| 执行中需求 | `HMvbbjDHOaHyc6sZny6cMRT8n8b` | `tblxLMQ8Ih5Gs5oM` |
+Base Token 和 Table ID 见 `tripo-tables` skill 的数据表速查。
 
 ## 录入需求
 

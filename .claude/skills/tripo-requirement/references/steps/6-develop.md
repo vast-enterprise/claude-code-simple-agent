@@ -9,7 +9,7 @@
 
 1. **进入代码仓库**：
    - 根据需求类型选择仓库
-   - 参见 [../../REPOSITORIES.md](../../REPOSITORIES.md)
+   - 参见 `tripo-repos` skill 的仓库列表
 
 2. **创建 worktree**：
    ```bash

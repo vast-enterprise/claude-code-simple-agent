@@ -30,12 +30,20 @@
    - 状态标记为 ✅ 已完成
    - 添加完成记录
 
+5. **归档任务目录**：
+   ```bash
+   mv tasks/<TASK_DIR> tasks-finished/<TASK_DIR>
+   ```
+   - 将任务目录从 `tasks/` 移动到 `tasks-finished/`
+   - 如果 `tasks-finished/` 不存在，先创建
+
 ## 如何定义完成
 
 - [ ] 用户确认已上线
 - [ ] 已提议状态为"完成"
 - [ ] 实际交付时间已更新
 - [ ] STATUS.md 已更新为完成状态
+- [ ] 任务目录已归档到 `tasks-finished/`
 
 ## 最终状态
 

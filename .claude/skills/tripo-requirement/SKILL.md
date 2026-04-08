@@ -80,7 +80,7 @@ description: |
 
 ## 相关文档
 
-- [TABLES.md](../../TABLES.md) - 表格结构
-- [REPOSITORIES.md](../../REPOSITORIES.md) - 代码仓库
-- [TASK-TRACKING.md](../../TASK-TRACKING.md) - 任务跟踪规范
+- `tripo-tables` skill - 表格结构、字段 ID、状态选项、发车流程
+- `tripo-repos` skill - 代码仓库注册表（路径、技术栈、部署信息）
+- `tripo-task-tracking` skill - 任务目录管理、状态跟踪、归档
 - [references/commands.md](references/commands.md) - 命令速查
