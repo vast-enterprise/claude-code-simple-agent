@@ -18,7 +18,7 @@
 | 产品需求 | `HMvbbjDHOaHyc6sZny6cMRT8n8b` | `tblb9E9PQHP79JHE` |
 | 技术需求 | `OCNcbuwpta7qc7sxAPOcSpngnbg` | `tblkb1Saexm0njaE` |
 
-3. **录入字段**：
+3. **录入字段**（字段详情见 `tripo-tables` skill 对应表的 references）：
    - 一句话描述需求
    - 需求详细描述（可附文档）
    - 需求Owner、研发Owner
@@ -29,7 +29,7 @@
 
 4. **更新任务目录**：
    - 重命名目录（临时 ID → 实际 ID）
-   - 更新 STATUS.md
+   - 更新 STATUS.md（按 `tripo-task-tracking` skill 的更新规则）
 
 ## 如何定义完成
 

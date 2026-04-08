@@ -48,6 +48,6 @@
 ## worktree 命名规范
 
 ```
-feature/REQ-recXxx-用户画像优化
-bugfix/BUG-recYyy-首页白屏修复
+feature/REQ-recXxx-blog-seo-optimize
+bugfix/BUG-recYyy-homepage-blank-fix
 ```

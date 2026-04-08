@@ -17,30 +17,20 @@
    - 未录入 → 使用临时 ID（如 `new-001`）
 
 3. **创建任务跟踪目录**：
-   ```
-   tasks/{日期}_REQ-{ID}_{简述}/
-   ├── STATUS.md
-   └── notes/
-   ```
-
-4. **初始化 STATUS.md**：
-   - 填写基本信息
-   - 添加第一条状态记录
+   按 `tripo-task-tracking` skill 的目录命名规范和操作流程创建目录并初始化 STATUS.md。
 
 ## 如何定义完成
 
-- [ ] 任务目录已创建
+- [ ] 任务目录已创建（符合 `tripo-task-tracking` 命名规范）
 - [ ] STATUS.md 已初始化
 - [ ] 基本信息已填写（需求描述、Owner 等）
 - [ ] 已判断需求是否已录入表格
 
 ## 目录命名规范
 
-```
-tasks/2026-04-02_REQ-recXxx_用户画像优化/
-tasks/2026-04-02_REQ-new-001_支付流程重构/
-```
+参见 `tripo-task-tracking` skill 的目录命名规范。示例：
 
-- 日期：YYYY-MM-DD
-- ID：record-id 或临时编号
-- 简述：中文，不超过 20 字
+```
+tasks/2026-04-02_REQ-recXxx_blog-seo-optimize/
+tasks/2026-04-02_REQ-new-001_payment-refactor/
+```

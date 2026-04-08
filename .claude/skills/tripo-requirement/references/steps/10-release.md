@@ -8,11 +8,6 @@
 ## 做什么
 
 1. **飞书通知用户**（参见 [notification.md](../notification.md) 节点 4）：
-   ```bash
-   lark-cli im +messages-send \
-     --user-id ou_8adc8aca7ad728142eb6669e5b13fb52 \
-     --text $'[准备上线]\n需求: <需求名称>\n状态: 测试验收已通过\n操作: 请确认是否发布上线'
-   ```
    通知后**暂停**，等待用户确认。
 
 2. **等待用户发布上线**
@@ -25,17 +20,15 @@
    - 执行表状态 → "完成"
    - 需求池状态 → "已完成"
    - 实际交付时间 → 当前日期
+   - 发车路径选择参见 `tripo-tables` skill 的 `release-flow.md`
 
-4. **更新 STATUS.md**：
+4. **更新 STATUS.md**（按 `tripo-task-tracking` skill 的更新规则）：
    - 状态标记为 ✅ 已完成
    - 添加完成记录
 
-5. **归档任务目录**：
-   ```bash
-   mv tasks/<TASK_DIR> tasks-finished/<TASK_DIR>
-   ```
-   - 将任务目录从 `tasks/` 移动到 `tasks-finished/`
-   - 如果 `tasks-finished/` 不存在，先创建
+5. **归档任务目录**（按 `tripo-task-tracking` skill 的归档操作）
+
+6. **（可选）清理 worktree**：提议清理本需求对应的 worktree，参见 `clean-worktree` skill
 
 ## 如何定义完成
 

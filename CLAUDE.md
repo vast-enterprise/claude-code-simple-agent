@@ -21,6 +21,8 @@
 | 状态变更 | **提议 + 确认**：Agent 先提议，用户确认后再执行 |
 | PR 提交 | 可 commit、可 push，**禁止 merge** |
 | 开发闭环 | 以 PR 提出为闭环，不擅自合并 |
+| 飞书通知后阻塞 | 必须用 AskUserQuestion 等待确认，不可脑补用户已确认 |
+| lark-cli 发消息 | 必须用 `--as bot`，通知场景禁止用默认 user 身份 |
 
 ## Skills 目录
 
@@ -32,3 +34,9 @@
 | `tripo-task-tracking` | 任务目录管理、状态跟踪、归档 |
 | `clean-worktree` | 清理已完成任务的 git worktree |
 | `tripo-bugfix` | Bug 修复任务（待创建） |
+
+## 进入代码仓库的铁律
+
+- **先读 llmdoc**：进入任何仓库后，第一步必须读取 `llmdoc/index.md` + `llmdoc/overview/` 下所有文档，不许跳过
+- **Worktree 纪律**：所有代码修改必须在 worktree 目录内进行，禁止在主分支上 mkdir/write/edit；Write/Edit 工具的 file_path 必须指向 worktree 路径
+- **TDD**：先写测试再写代码，提交前必须跑测试贴证据，没有测试的交付不算闭环
