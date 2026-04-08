@@ -25,11 +25,13 @@
 
 ```bash
 lark-cli im +messages-send \
+  --as bot \
   --user-id ou_8adc8aca7ad728142eb6669e5b13fb52 \
   --text "<消息内容>"
 ```
 
-> 使用 `$'...'` 语法保留多行格式。
+> - 必须使用 `--as bot`（应用身份），不要用默认的 user 身份（需要额外 OAuth 授权）
+> - 使用 `$'...'` 语法保留多行格式。
 
 ## 4 个通知节点
 
@@ -39,6 +41,7 @@ lark-cli im +messages-send \
 
 ```bash
 lark-cli im +messages-send \
+  --as bot \
   --user-id ou_8adc8aca7ad728142eb6669e5b13fb52 \
   --text $'[需求评审完成]\n需求: <需求名称>\n状态: 已输出评审文档，提议变更为"定容确认"\n操作: 请在 Claude Code 中确认容量，或提出修改意见'
 ```
@@ -49,6 +52,7 @@ lark-cli im +messages-send \
 
 ```bash
 lark-cli im +messages-send \
+  --as bot \
   --user-id ou_8adc8aca7ad728142eb6669e5b13fb52 \
   --text $'[技术方案完成]\n需求: <需求名称>\n状态: 已输出技术方案文档\n操作: 请在 Claude Code 中确认方案，或提出修改意见'
 ```
@@ -59,6 +63,7 @@ lark-cli im +messages-send \
 
 ```bash
 lark-cli im +messages-send \
+  --as bot \
   --user-id ou_8adc8aca7ad728142eb6669e5b13fb52 \
   --text $'[PR 已完成验证]\n需求: <需求名称>\nPR: <PR 链接>\n\n✅ Code Review: 通过\n✅ 集成测试: 通过\n\n报告: tasks/$TASK_ID/integration-test-report.md\n\n操作: 请 review 并合并'
 ```
@@ -69,6 +74,7 @@ lark-cli im +messages-send \
 
 ```bash
 lark-cli im +messages-send \
+  --as bot \
   --user-id ou_8adc8aca7ad728142eb6669e5b13fb52 \
   --text $'[准备上线]\n需求: <需求名称>\n状态: 用户验收已通过\n操作: 请确认是否发布上线'
 ```
