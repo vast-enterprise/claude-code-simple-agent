@@ -29,11 +29,11 @@
 | Skill | 用途 |
 |-------|------|
 | `tripo-requirement` | 需求开发全流程（录入→评审→开发→PR→上线） |
-| `tripo-tables` | 飞书表格数据字典、发车流程、Workflow/option_id |
-| `tripo-repos` | 代码仓库注册表（路径、技术栈、部署信息） |
-| `tripo-task-tracking` | 任务目录管理、状态跟踪、归档 |
-| `clean-worktree` | 清理已完成任务的 git worktree |
-| `tripo-bugfix` | Bug 修复任务（待创建） |
+| `tripo-tables` | 飞书多维表格全操作（状态流转、字段查询、用户需求查询、发车流程、通知模板） |
+| `tripo-repos` | 仓库注册表（路径、技术栈、部署信息） |
+| `tripo-worktree` | worktree 全生命周期（创建→使用→清理） |
+| `tripo-task-dirs` | 任务目录管理（创建→跟踪→归档） |
+| `tripo-bugfix` | Bug 修复流程（待创建） |
 
 ## 进入代码仓库的铁律
 

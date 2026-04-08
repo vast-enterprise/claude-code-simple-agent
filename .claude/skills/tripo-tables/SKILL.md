@@ -1,15 +1,14 @@
 ---
 name: tripo-tables
 description: |
-  Tripo 飞书多维表格数据字典与发车流程。提供所有表格的 Base Token、Table ID、字段结构、状态选项值、
-  表间关系、完整状态流转、发车上线三条路径、Workflow ID 和 option_id 速查。
-  被 tripo-requirement 等流程 skill 显式调用，也可在直接操作飞书表格时使用。
+  飞书多维表格全操作：状态流转、字段查询、记录读写、用户需求查询、发车流程、通知模板。
+  被 tripo-requirement 等流程 skill 显式调用，也可独立使用。
 
   触发条件：
-  - 其他 skill（tripo-requirement、未来的 bugfix 流程）显式调用
-  - 需要查询 Table ID、Field ID、状态选项值、option_id
-  - 需要了解发车流程、上线路径、Workflow ID
-  - "表格结构"、"字段 ID"、"需求状态"、"发车流程"、"上线"
+  - 查表格、查字段、查需求、录入需求、更新状态、发车、上线
+  - 查询某人的需求、我的需求、需求列表、需求进度
+  - 需要 Table ID、Field ID、状态选项值、option_id、Workflow ID
+  - 需要发送飞书通知
 ---
 
 # Tripo 飞书多维表格
@@ -77,3 +76,18 @@ Sprint版本计划.部署进度（接力式）:
 ## 发车流程与 Workflow
 
 发车上线三条路径和完整 Workflow/option_id 速查：[references/release-flow.md](references/release-flow.md)
+
+## 用户需求查询
+
+查询指定用户在三个表中的需求：
+
+```bash
+python3 <skill-path>/scripts/query_user_requirements.py <用户名|open_id|我>
+```
+
+- `我` 自动调用 `lark-cli contact +get-me` 获取当前用户
+- 字段映射参考：[references/field-mapping.md](references/field-mapping.md)
+
+## 通知模板
+
+飞书私聊通知模板（需求评审、技评、闭环、上线等节点）：[references/notification.md](references/notification.md)

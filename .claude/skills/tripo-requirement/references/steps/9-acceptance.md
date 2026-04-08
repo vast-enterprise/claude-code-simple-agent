@@ -12,11 +12,11 @@
 2. **用户确认后**：
    - 合并 PR
    - **同步主工作区**：在对应代码仓主工作区执行 `git fetch origin main && git pull origin main`，确保后续任务调查时代码是最新的
-   - 提议状态变更为"提测中"
+   - 提议状态变更为"提测中"（→ tripo-tables）
 
 3. **配合验收测试**：
    - 修复发现的 Bug
-   - 更新 STATUS.md
+   - 更新 STATUS.md（→ tripo-task-dirs）
 
 4. **验收通过后**：
    - 进入 Step 10 发布上线

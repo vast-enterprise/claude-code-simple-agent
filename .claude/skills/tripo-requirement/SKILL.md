@@ -61,7 +61,7 @@ description: |
 
 ## 飞书通知阻塞点
 
-流程中有 4 个阻塞点，通知后必须暂停等待用户确认（详见 [notification.md](references/notification.md)）：
+流程中有 4 个阻塞点，通知后必须暂停等待用户确认（→ tripo-tables，notification.md）：
 
 | 步骤 | 触发时机 |
 |------|---------|
@@ -80,5 +80,5 @@ description: |
 
 - `tripo-tables` skill - 表格结构、字段 ID、状态选项、发车流程
 - `tripo-repos` skill - 代码仓库注册表（路径、技术栈、部署信息）
-- `tripo-task-tracking` skill - 任务目录管理、状态跟踪、归档
+- `tripo-task-dirs` skill - 任务目录管理、状态跟踪、归档
 - [references/commands.md](references/commands.md) - 命令速查

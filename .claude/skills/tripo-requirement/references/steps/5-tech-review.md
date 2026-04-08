@@ -22,14 +22,9 @@
      - 风险评估
      - 测试计划
 
-3. **更新 STATUS.md**
+3. **更新 STATUS.md**（→ tripo-task-dirs）
 
-4. **飞书通知用户**（参见 [notification.md](../notification.md) 节点 2）：
-   ```bash
-   lark-cli im +messages-send \
-     --user-id ou_8adc8aca7ad728142eb6669e5b13fb52 \
-     --text $'[技术方案完成]\n需求: <需求名称>\n状态: 已输出技术方案文档\n操作: 请在 Claude Code 中确认方案，或提出修改意见'
-   ```
+4. **飞书通知用户**（→ tripo-tables，notification.md 节点 2）：
    通知后**暂停**，等待用户确认。
 
 5. **提议状态变更**：

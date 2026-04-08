@@ -12,7 +12,7 @@
    - 关联需求 ID
    - 关联任务目录
    - 描述变更内容
-3. **更新 STATUS.md**
+3. **更新 STATUS.md**（→ tripo-task-dirs）
 
 ## 如何定义完成
 

@@ -29,18 +29,12 @@
      - 问题与风险
      - 评审结论
 
-4. **更新 STATUS.md**：
-   - 添加"需求评审"状态记录
+4. **更新 STATUS.md**（→ tripo-task-dirs）
 
 5. **提议状态变更**：
    - 需求状态 → "定容确认"
 
-6. **飞书通知用户**（参见 [notification.md](../notification.md) 节点 1）：
-   ```bash
-   lark-cli im +messages-send \
-     --user-id ou_8adc8aca7ad728142eb6669e5b13fb52 \
-     --text $'[需求评审完成]\n需求: <需求名称>\n状态: 已输出评审文档，提议变更为"定容确认"\n操作: 请在 Claude Code 中确认容量，或提出修改意见'
-   ```
+6. **飞书通知用户**（→ tripo-tables，notification.md 节点 1）：
    通知后**暂停**，等待用户确认。
 
 7. **等待用户确认容量**

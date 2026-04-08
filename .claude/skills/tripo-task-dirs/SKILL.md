@@ -1,7 +1,7 @@
 ---
-name: tripo-task-tracking
+name: tripo-task-dirs
 description: |
-  任务进度跟踪与生命周期管理。管理 tasks/ 目录下的任务状态：创建任务目录、初始化和更新 STATUS.md、归档已完成任务到 tasks-finished/。
+  任务目录生命周期管理。管理 tasks/ 目录下的任务：创建目录、初始化和更新 STATUS.md、归档到 tasks-finished/。
   被 tripo-requirement 等流程 skill 显式调用，也可独立使用。
 
   触发条件：

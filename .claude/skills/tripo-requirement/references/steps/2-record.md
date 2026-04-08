@@ -11,14 +11,7 @@
    - 产品需求 → 产品需求池
    - 技术需求 → 技术需求池
 
-2. **选择目标表格**：
-
-| 类型 | Base Token | Table ID |
-|------|------------|----------|
-| 产品需求 | `HMvbbjDHOaHyc6sZny6cMRT8n8b` | `tblb9E9PQHP79JHE` |
-| 技术需求 | `OCNcbuwpta7qc7sxAPOcSpngnbg` | `tblkb1Saexm0njaE` |
-
-3. **录入字段**（字段详情见 `tripo-tables` skill 对应表的 references）：
+2. **录入需求池**（→ tripo-tables，字段详情见对应表的 references）：
    - 一句话描述需求
    - 需求详细描述（可附文档）
    - 需求Owner、研发Owner
@@ -27,9 +20,9 @@
    - 绝对优先级
    - 需求状态 = "未启动"
 
-4. **更新任务目录**：
+3. **更新任务目录**（→ tripo-task-dirs）：
    - 重命名目录（临时 ID → 实际 ID）
-   - 更新 STATUS.md（按 `tripo-task-tracking` skill 的更新规则）
+   - 更新 STATUS.md
 
 ## 如何定义完成
 
@@ -37,18 +30,3 @@
 - [ ] 已获取 record-id
 - [ ] 任务目录名已更新（如有临时 ID）
 - [ ] STATUS.md 已更新
-
-## 录入命令
-
-```bash
-lark-cli base +record-upsert \
-  --base-token <base-token> \
-  --table-id <table-id> \
-  --json '{"fields": {
-    "一句话描述需求": "<描述>",
-    "需求详细描述（可附文档）": "<详细>",
-    "需求Owner": [{"id": "<open-id>"}],
-    "需求提出日期": <毫秒时间戳>,
-    "需求状态": "未启动"
-  }}'
-```

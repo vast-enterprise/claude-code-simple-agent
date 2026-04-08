@@ -7,28 +7,27 @@
 
 ## 做什么
 
-1. **飞书通知用户**（参见 [notification.md](../notification.md) 节点 4）：
+1. **飞书通知用户**（→ tripo-tables，notification.md 节点 4）：
    通知后**暂停**，等待用户确认。
 
 2. **等待用户发布上线**
 
-2. **确认上线完成**：
+3. **确认上线完成**：
    - 用户告知已上线
    - 或通过其他方式确认
 
-3. **提议状态变更**：
+4. **提议状态变更**（→ tripo-tables）：
    - 执行表状态 → "完成"
    - 需求池状态 → "已完成"
    - 实际交付时间 → 当前日期
    - 发车路径选择参见 `tripo-tables` skill 的 `release-flow.md`
 
-4. **更新 STATUS.md**（按 `tripo-task-tracking` skill 的更新规则）：
+5. **更新 STATUS.md**（→ tripo-task-dirs）：
    - 状态标记为 ✅ 已完成
-   - 添加完成记录
 
-5. **归档任务目录**（按 `tripo-task-tracking` skill 的归档操作）
+6. **归档任务目录**（→ tripo-task-dirs）
 
-6. **（可选）清理 worktree**：提议清理本需求对应的 worktree，参见 `clean-worktree` skill
+7. **（可选）清理 worktree**（→ tripo-worktree）
 
 ## 如何定义完成
 
@@ -36,7 +35,7 @@
 - [ ] 已提议状态为"完成"
 - [ ] 实际交付时间已更新
 - [ ] STATUS.md 已更新为完成状态
-- [ ] 任务目录已归档到 `tasks-finished/`
+- [ ] 任务目录已归档
 
 ## 最终状态
 
