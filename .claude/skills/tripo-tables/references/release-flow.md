@@ -119,3 +119,11 @@
 | `wkfQpKcvFM3J7v10` | 发版信息同步 | ButtonTrigger | 添加群成员，通知发车信息 |
 | `wkfv7lNEMo3XlRlR` | 发版完成确认 | ButtonTrigger | 上线中→完成，需求池→已完成 |
 | `wkfDZswkBew4cDpN` | 每日执行中需求状态同步 | TimerTrigger | 每日同步状态 |
+
+## 部署 checkbox 字段 ID（Sprint 版本计划）
+
+| 字段 | Field ID |
+|------|----------|
+| 算法部署完毕 | `fldDgrQRTd` |
+| 后端部署完毕 | `fldWGA6C5g` |
+| 前端部署完毕 | `fldy6ym5PN` |
