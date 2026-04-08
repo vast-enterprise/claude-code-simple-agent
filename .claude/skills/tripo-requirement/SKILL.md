@@ -81,4 +81,5 @@ description: |
 - `tripo-tables` skill - 表格结构、字段 ID、状态选项、发车流程
 - `tripo-repos` skill - 代码仓库注册表（路径、技术栈、部署信息）
 - `tripo-task-dirs` skill - 任务目录管理、状态跟踪、归档
+- `tripo-release` skill - 前端发版（staging / production）
 - [references/commands.md](references/commands.md) - 命令速查

@@ -33,6 +33,7 @@
 | `tripo-repos` | 仓库注册表（路径、技术栈、部署信息） |
 | `tripo-worktree` | worktree 全生命周期（创建→使用→清理） |
 | `tripo-task-dirs` | 任务目录管理（创建→跟踪→归档） |
+| `tripo-release` | 前端发版（staging 部署 / production 发车上线） |
 | `tripo-bugfix` | Bug 修复流程（待创建） |
 
 ## 进入代码仓库的铁律

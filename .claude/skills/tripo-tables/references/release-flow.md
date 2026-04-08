@@ -127,3 +127,92 @@
 | 算法部署完毕 | `fldDgrQRTd` |
 | 后端部署完毕 | `fldWGA6C5g` |
 | 前端部署完毕 | `fldy6ym5PN` |
+
+## lark-cli 操作指南
+
+以下是 agent 通过 lark-cli 直接操作表格的命令，等效于飞书表格上的按钮触发 workflow。
+
+### 需求准出（跟车）
+
+```bash
+# 1. 查询当前已启动的跟车版本
+lark-cli base +record-list \
+  --base-token HMvbbjDHOaHyc6sZny6cMRT8n8b \
+  --table-id tblm2FGJjiK4frzt \
+  --filter '{"conjunction":"and","conditions":[{"field_name":"班车状态","operator":"is","value":["已启动"]},{"field_name":"上线类型","operator":"is","value":["跟车"]}]}'
+
+# 2. 在发车中需求表创建记录（状态=待上线，关联版本）
+lark-cli base +record-upsert \
+  --base-token HMvbbjDHOaHyc6sZny6cMRT8n8b \
+  --table-id tblPlaxVsLBvKMRl \
+  --json '{"fields": {"需求描述": "<描述>", "状态": "待上线", "发车版本": [{"record_id": "<sprint-record-id>"}]}}'
+
+# 3. 更新执行中需求状态 → 完成
+lark-cli base +record-update \
+  --base-token HMvbbjDHOaHyc6sZny6cMRT8n8b \
+  --table-id tblxLMQ8Ih5Gs5oM \
+  --record-id <exec-record-id> \
+  --json '{"fields": {"状态": "完成"}}'
+
+# 4. 更新产品需求池状态 → 验收/提测中
+lark-cli base +record-update \
+  --base-token HMvbbjDHOaHyc6sZny6cMRT8n8b \
+  --table-id tblb9E9PQHP79JHE \
+  --record-id <pool-record-id> \
+  --json '{"fields": {"需求状态": "验收/提测中"}}'
+```
+
+### 需求准出（SSS 紧急）
+
+```bash
+# 1. 在 Sprint 版本计划创建临时版本
+lark-cli base +record-upsert \
+  --base-token HMvbbjDHOaHyc6sZny6cMRT8n8b \
+  --table-id tblm2FGJjiK4frzt \
+  --json '{"fields": {"版本名称": "SSS-<日期>-<简述>", "上线类型": "sss", "班车状态": "已启动"}}'
+
+# 2. 在发车中需求表创建记录（状态=上线中，直接进入部署）
+lark-cli base +record-upsert \
+  --base-token HMvbbjDHOaHyc6sZny6cMRT8n8b \
+  --table-id tblPlaxVsLBvKMRl \
+  --json '{"fields": {"需求描述": "<描述>", "状态": "上线中", "发车版本": [{"record_id": "<新sprint-record-id>"}]}}'
+
+# 3-4. 同跟车模式的步骤 3-4
+```
+
+### 勾部署 checkbox
+
+```bash
+lark-cli base +record-update \
+  --base-token HMvbbjDHOaHyc6sZny6cMRT8n8b \
+  --table-id tblm2FGJjiK4frzt \
+  --record-id <sprint-record-id> \
+  --json '{"fields": {"前端部署完毕": true}}'
+```
+
+### 发版完成确认
+
+所有部署 checkbox 勾完后：
+
+```bash
+# 发车中需求：上线中 → 完成
+lark-cli base +record-update \
+  --base-token HMvbbjDHOaHyc6sZny6cMRT8n8b \
+  --table-id tblPlaxVsLBvKMRl \
+  --record-id <release-record-id> \
+  --json '{"fields": {"状态": "完成"}}'
+
+# 产品需求池：→ 已完成
+lark-cli base +record-update \
+  --base-token HMvbbjDHOaHyc6sZny6cMRT8n8b \
+  --table-id tblb9E9PQHP79JHE \
+  --record-id <pool-record-id> \
+  --json '{"fields": {"需求状态": "已完成"}}'
+
+# Sprint 版本计划：班车状态 → 已完成
+lark-cli base +record-update \
+  --base-token HMvbbjDHOaHyc6sZny6cMRT8n8b \
+  --table-id tblm2FGJjiK4frzt \
+  --record-id <sprint-record-id> \
+  --json '{"fields": {"班车状态": "已完成"}}'
+```

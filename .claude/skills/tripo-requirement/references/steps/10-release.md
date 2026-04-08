@@ -7,33 +7,30 @@
 
 ## 做什么
 
-1. **飞书通知用户**（→ tripo-tables，notification.md 节点 4）：
-   通知后**暂停**，等待用户确认。
+### 10.1 需求准出 + 搭车
 
-2. **等待用户发布上线**
+1. **确认发车路径**：跟车 / SSS / hotfix（→ tripo-tables，release-flow.md 三条路径）
+2. **执行需求准出**（→ tripo-tables，release-flow.md lark-cli 操作指南）：
+   - 创建发车中需求记录
+   - 更新执行表状态 → "完成"
+   - 更新需求池状态 → "验收/提测中"
 
-3. **确认上线完成**：
-   - 用户告知已上线
-   - 或通过其他方式确认
+### 10.2 部署
 
-4. **提议状态变更**（→ tripo-tables）：
-   - 执行表状态 → "完成"
-   - 需求池状态 → "已完成"
-   - 实际交付时间 → 当前日期
-   - 发车路径选择参见 `tripo-tables` skill 的 `release-flow.md`
+调用 `tripo-release` skill 的 production 模式完成部署。
 
-5. **更新 STATUS.md**（→ tripo-task-dirs）：
-   - 状态标记为 ✅ 已完成
+### 10.3 收尾
 
-6. **归档任务目录**（→ tripo-task-dirs）
-
-7. **（可选）清理 worktree**（→ tripo-worktree）
+1. **更新 STATUS.md**（→ tripo-task-dirs）：状态标记为 ✅ 已完成
+2. **归档任务目录**（→ tripo-task-dirs）
+3. **（可选）清理 worktree**（→ tripo-worktree）
 
 ## 如何定义完成
 
-- [ ] 用户确认已上线
-- [ ] 已提议状态为"完成"
-- [ ] 实际交付时间已更新
+- [ ] 需求已准出，发车中需求记录已创建
+- [ ] 执行表状态 = "完成"
+- [ ] production 已部署并验证通过
+- [ ] 前端部署 checkbox 已勾选
 - [ ] STATUS.md 已更新为完成状态
 - [ ] 任务目录已归档
 
@@ -43,3 +40,4 @@
 |------|---------|-----|
 | 需求池 | 需求状态 | 已完成 |
 | 执行表 | 状态 | 完成 |
+| 发车中需求 | 状态 | 完成 |
