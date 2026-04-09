@@ -38,6 +38,42 @@ async def permission_gate(
     return PermissionResultAllow()
 
 
+def add_reaction(message_id: str, emoji_type: str = "OnIt") -> str | None:
+    """给消息打表情回复，返回 reaction_id 用于后续删除"""
+    import subprocess
+
+    params = json.dumps({"message_id": message_id})
+    data = json.dumps({"reaction_type": {"emoji_type": emoji_type}})
+    result = subprocess.run(
+        [
+            "lark-cli", "im", "reactions", "create",
+            "--params", params, "--data", data, "--as", "bot",
+        ],
+        capture_output=True, text=True, timeout=10,
+    )
+    if result.returncode == 0:
+        try:
+            resp = json.loads(result.stdout)
+            return resp.get("data", {}).get("reaction_id")
+        except (json.JSONDecodeError, KeyError):
+            pass
+    return None
+
+
+def remove_reaction(message_id: str, reaction_id: str):
+    """移除消息上的表情回复"""
+    import subprocess
+
+    params = json.dumps({"message_id": message_id, "reaction_id": reaction_id})
+    subprocess.run(
+        [
+            "lark-cli", "im", "reactions", "delete",
+            "--params", params, "--as", "bot",
+        ],
+        capture_output=True, text=True, timeout=10,
+    )
+
+
 def reply_message(message_id: str, text: str):
     """通过 lark-cli 回复飞书消息"""
     import subprocess
@@ -104,10 +140,13 @@ async def handle_message(client: ClaudeSDKClient, event: dict):
     # 发送给 Claude
     await client.query(prompt)
 
-    # 收集回复
+    # 收集回复，首条消息到达时打表情表示"正在处理"
     reply_text = ""
+    reaction_id = None
     async for msg in client.receive_response():
         if isinstance(msg, AssistantMessage):
+            if reaction_id is None:
+                reaction_id = add_reaction(message_id)
             for block in msg.content:
                 if isinstance(block, TextBlock):
                     reply_text += block.text
@@ -115,6 +154,10 @@ async def handle_message(client: ClaudeSDKClient, event: dict):
             if msg.is_error and not reply_text:
                 reply_text = "抱歉，处理时出了点问题。"
             break
+
+    # 处理完成，移除"正在处理"表情
+    if reaction_id:
+        remove_reaction(message_id, reaction_id)
 
     if reply_text.strip():
         reply_message(message_id, reply_text.strip())
