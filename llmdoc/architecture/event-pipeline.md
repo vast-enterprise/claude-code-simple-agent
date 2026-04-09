@@ -95,20 +95,28 @@ lark-cli stdout
 ### 3.3 进程生命周期管理
 
 **启动顺序：**
-1. `start_event_listener()` 启动 lark-cli 子进程 → `src/main.py:50`
+1. `start_event_listener()` 启动 lark-cli 子进程 → `src/main.py:37`
 2. `ClaudeSDKClient(options)` 构造 → `src/main.py:53`
-3. `client.connect()` 启动 SDK CLI 子进程 → `src/main.py:85`
-4. `SessionDispatcher()` 构造 → `src/main.py:88`
-5. 注册 `SIGTERM`/`SIGINT` → `cleanup` → `src/main.py:81-82`
+3. `SessionDispatcher()` 构造 → `src/main.py:55`
+4. 注册 `SIGTERM`/`SIGINT` → `_on_signal`（仅设 `_shutdown` flag）→ `src/main.py:57-59`
+5. `client.connect()` 启动 SDK CLI 子进程 → `src/main.py:63`
 
-**退出路径（两条互斥）：**
+**退出路径（统一走 finally）：**
 
-| 路径 | 触发条件 | 代码位置 | 行为 |
-|------|----------|----------|------|
-| 信号退出 | SIGTERM/SIGINT | `src/main.py:68-79` | `os.killpg` 杀两个进程组 → `os._exit(0)` 硬退出，不经 finally |
-| 正常退出 | listener stdout EOF | `src/main.py:114-121` | `listener.terminate()` → `dispatcher.shutdown()` → `client.disconnect()` → 正常返回 |
+信号退出和正常退出（listener EOF）最终都经过 `finally` 块：
 
-**`_force_kill_sdk_process` 实现细节：** `src/main.py:54-65` — 通过 `client._transport._process` 私有属性获取 SDK 子进程 PID，`os.killpg` 杀整个进程组。依赖 `claude_agent_sdk==0.1.x` 内部结构，版本升级时需验证。
+| 步骤 | 行为 | 代码位置 |
+|------|------|----------|
+| 1 | `listener.terminate()`，5s 超时后 `kill()` | `src/main.py:76-79` |
+| 2 | `dispatcher.drain_all(timeout=10)` 等待 worker 完成，超时强制取消 | `src/main.py:81` |
+| 3 | `client.disconnect()` 断开 SDK（内部有 5s grace + SIGTERM + SIGKILL 清理链） | `src/main.py:83` |
+
+**优雅关闭机制：**
+
+- `_shutdown = asyncio.Event()` 作为信号标志，替代 `os._exit()` 硬退出
+- `_read_or_shutdown()` 用 `asyncio.wait()` 多路复用 `readline` + `_shutdown.wait()`，信号触发时立即打断主循环
+- `dispatcher.drain_all()` 先等待所有队列清空（最多 10s），超时后强制 `shutdown()` 取消 worker
+- 此架构为未来**断线重连**铺路：finally 块后可接重连循环
 
 ### 3.4 并发处理模型
 
