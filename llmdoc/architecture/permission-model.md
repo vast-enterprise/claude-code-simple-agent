@@ -10,7 +10,7 @@
 - `src/permissions.py` (`permission_gate`, `set_sender`, `get_sender`, `_current_sender_id`, `SENSITIVE`): 运行时权限门控，唯一的代码强制执行点。`_current_sender_id` 为 `contextvars.ContextVar`，支持并发隔离。
 - `src/handler.py` (`handle_message`, `compute_session_id`): 调用 `permissions.set_sender(sender_id)` 写入 contextvars，构造带 `[所有者]`/`[同事]` 角色标签的 prompt。
 - `src/main.py` (`main`): 注册 `permission_gate` 为 `ClaudeAgentOptions.can_use_tool` 回调，设置 `permission_mode="bypassPermissions"`；通过 `disallowed_tools` 硬拦截交互式工具；拼接 `HEADLESS_RULES` 到 system prompt。
-- `src/config.py` (`OWNER_ID`, `HEADLESS_RULES`): 从 `config.json` 的 `owner_open_id` 字段加载所有者身份；`HEADLESS_RULES` 定义 headless 模式运行约束（禁止交互式工具、需确认时文本说明），独立于 `persona.md` 存放。
+- `src/config.py` (`OWNER_ID`, `HEADLESS_RULES`, `DISALLOWED_TOOLS`, `DISALLOWED_SKILLS`): 从 `config.json` 的 `owner_open_id` 字段加载所有者身份；`HEADLESS_RULES` 定义 headless 模式运行约束；`DISALLOWED_TOOLS` 合并硬编码（交互式工具）+ config 中的纯工具名；`DISALLOWED_SKILLS` 从 config 中 `Skill(xxx)` 格式解析出 skill 名集合，供 `permission_gate` 拦截。
 - `persona.md` (权限规则章节): prompt 层权限定义——所有者全权，同事只读+非敏感。
 - `CLAUDE.md` (行为约束表): prompt 层行为约束——禁止 merge、状态变更需确认、通知后阻塞等。
 
@@ -23,10 +23,11 @@
 
 ### 第二层：代码强制（运行时拦截）
 
-- **1. 身份写入:** 飞书消息到达后，`src/handler.py:53` 调用 `permissions.set_sender(sender_id)` 将 sender_id 写入 `_current_sender_id`（`ContextVar`）。
-- **2. 角色标签注入:** `src/handler.py:55-56` 比对 `sender_id == OWNER_ID`，在 prompt 前缀注入 `[所有者]` 或 `[同事]`。
-- **3. SDK 工具调用触发:** Claude SDK 每次调用工具前，回调 `src/main.py:46` 注册的 `permission_gate`。
-- **4. 门控判定:** `src/permissions.py:29-41` 执行判定逻辑：
+- **1. Skill 黑名单拦截:** `permission_gate` 检查 `tool_name == "Skill"` 时，从 `tool_input["skill"]` 取 skill 名，若在 `DISALLOWED_SKILLS` 集合中则返回 `PermissionResultDeny`。此机制弥补了 `disallowed_tools` 无法精确到 Skill 参数的限制。
+- **2. 身份写入:** 飞书消息到达后，`src/handler.py:53` 调用 `permissions.set_sender(sender_id)` 将 sender_id 写入 `_current_sender_id`（`ContextVar`）。
+- **3. 角色标签注入:** `src/handler.py:55-56` 比对 `sender_id == OWNER_ID`，在 prompt 前缀注入 `[所有者]` 或 `[同事]`。
+- **4. SDK 工具调用触发:** Claude SDK 每次调用工具前，回调 `src/main.py` 注册的 `permission_gate`。
+- **5. Bash 门控判定:** `src/permissions.py` 执行判定逻辑：
   - 仅拦截 `tool_name == "Bash"` 的调用
   - 若 `sender is None`（context 丢失，如 SDK 内部调用未经 handler 设置 sender）→ 直接 `PermissionResultDeny`
   - 若 `get_sender() != OWNER_ID`，检查 `command` 是否包含 `SENSITIVE` 列表中的子串
@@ -65,4 +66,5 @@
 - **`contextvars.ContextVar` 而非参数透传:** `permission_gate` 回调签名由 SDK 定义，不支持自定义 context 参数。选择 `ContextVar` 实现 per-task 隔离，无需修改 SDK 调用侧代码。
 - **双层互补:** 代码层仅覆盖 Bash 工具的敏感命令子集；prompt 层覆盖更广的行为边界（如禁止 merge、能力边界、回复风格）。两层非冗余——代码层是硬拦截，prompt 层是软约束。
 - **`disallowed_tools` 解决 headless 环境工具不可用问题:** Claude Code preset 的 system prompt 包含 `AskUserQuestion`、`ExitPlanMode`、`EnterPlanMode` 等交互式工具定义，模型会尝试调用。`disallowed_tools` 在 CLI 层面硬拦截，`HEADLESS_RULES` 在 prompt 层面引导模型不去尝试。两者分离于 `persona.md` 之外——persona 只管人格定义，运行环境约束由 `HEADLESS_RULES` 承担。
+- **Skill 黑名单通过 `permission_gate` 而非 `disallowed_tools` 实现:** CLI 的 `--disallowedTools` 只支持工具名级别的匹配（如 `Bash(git:*)`），不支持 `Skill(sigma)` 这种按参数值匹配。因此 `config.json` 中 `Skill(xxx)` 格式的条目由 `src/config.py` 解析为 `DISALLOWED_SKILLS` 集合，在 `permission_gate` 回调中拦截。配置格式统一为 `disallowed_tools` 数组，解析逻辑自动分流。
 - **子串匹配而非正则:** 简单直接，但存在误判风险（如命令中包含 "deploy" 字样的非部署操作）。当前 SENSITIVE 列表足够具体，实际误判概率低。
