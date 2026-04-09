@@ -84,14 +84,15 @@ async def main():
         # 但未来 worker 若持有外部资源需在此处增加清理逻辑。
         os._exit(0)
 
+    # SessionDispatcher 必须在信号注册前创建，确保信号处理函数能访问它
+    dispatcher = SessionDispatcher()
+
     signal.signal(signal.SIGTERM, cleanup)
     signal.signal(signal.SIGINT, cleanup)
 
     try:
         await client.connect()
         print("[Avatar] Claude SDK 已连接，开始处理消息")
-
-        dispatcher = SessionDispatcher()
 
         while True:
             line_bytes = await listener.stdout.readline()
