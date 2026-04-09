@@ -10,9 +10,10 @@ import sys
 from claude_agent_sdk import ClaudeSDKClient, ClaudeAgentOptions
 from claude_agent_sdk.types import SystemPromptPreset
 
-from src.config import ROOT, CONFIG, PERSONA
-from src.handler import should_respond, handle_message
+from src.config import ROOT, CONFIG, PERSONA, HEADLESS_RULES
+from src.handler import should_respond, handle_message, compute_session_id
 from src.permissions import permission_gate
+from src.session import SessionDispatcher
 
 
 async def start_event_listener():
@@ -39,8 +40,12 @@ async def main():
         model=CONFIG["model"],
         effort=CONFIG.get("effort", "max"),
         max_turns=CONFIG.get("max_turns", 100),
-        system_prompt=SystemPromptPreset(type="preset", preset="claude_code", append=PERSONA),
+        system_prompt=SystemPromptPreset(
+            type="preset", preset="claude_code",
+            append=PERSONA + HEADLESS_RULES,
+        ),
         permission_mode="bypassPermissions",
+        disallowed_tools=["AskUserQuestion", "ExitPlanMode", "EnterPlanMode"],
         setting_sources=["project"],
         can_use_tool=permission_gate,
         env=env,
@@ -84,6 +89,8 @@ async def main():
         await client.connect()
         print("[Avatar] Claude SDK 已连接，开始处理消息")
 
+        dispatcher = SessionDispatcher()
+
         while True:
             line_bytes = await listener.stdout.readline()
             if not line_bytes:
@@ -99,12 +106,12 @@ async def main():
             if not should_respond(event):
                 continue
 
-            print(f"[Avatar] 收到消息: {event.get('content', '')[:50]}...")
-            try:
-                await handle_message(client, event)
-                print("[Avatar] 消息处理完成")
-            except Exception as e:
-                print(f"[Avatar] 处理消息出错: {e}", file=sys.stderr)
+            session_id = compute_session_id(event)
+            print(f"[Avatar] 收到消息 [{session_id}]: {event.get('content', '')[:50]}...")
+            await dispatcher.dispatch(
+                session_id,
+                handle_message(client, event),
+            )
 
     except KeyboardInterrupt:
         print("\n[Avatar] 正在关闭...")
@@ -113,6 +120,7 @@ async def main():
         if listener.returncode is None:
             listener.terminate()
             await listener.wait()
+        await dispatcher.shutdown()
         await client.disconnect()
         print("[Avatar] 已退出")
 

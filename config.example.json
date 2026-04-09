@@ -1,6 +1,7 @@
 {
   "owner_open_id": "ou_xxx",
   "owner_name": "你的名字",
+  "bot_name": "你的Bot名字",
   "model": "opus",
   "effort": "max",
   "max_turns": 100,

@@ -7,8 +7,8 @@
 
 ## 2. Core Components
 
-- `src/permissions.py` (`permission_gate`, `SENSITIVE`, `_current_sender_id`): 运行时权限门控，唯一的代码强制执行点。
-- `src/handler.py` (`handle_message`): 写入 `_current_sender_id` 全局状态，构造带 `[所有者]`/`[同事]` 角色标签的 prompt。
+- `src/permissions.py` (`permission_gate`, `set_sender`, `get_sender`, `_current_sender_id`, `SENSITIVE`): 运行时权限门控，唯一的代码强制执行点。`_current_sender_id` 为 `contextvars.ContextVar`，支持并发隔离。
+- `src/handler.py` (`handle_message`, `compute_session_id`): 调用 `permissions.set_sender(sender_id)` 写入 contextvars，构造带 `[所有者]`/`[同事]` 角色标签的 prompt。
 - `src/main.py` (`main`): 注册 `permission_gate` 为 `ClaudeAgentOptions.can_use_tool` 回调，设置 `permission_mode="bypassPermissions"`。
 - `src/config.py` (`OWNER_ID`): 从 `config.json` 的 `owner_open_id` 字段加载，作为所有者身份判定基准。
 - `persona.md` (权限规则章节): prompt 层权限定义——所有者全权，同事只读+非敏感。
@@ -18,12 +18,12 @@
 
 ### 第一层：代码强制（运行时拦截）
 
-- **1. 身份写入:** 飞书消息到达后，`src/handler.py:42` 将 `sender_id` 写入 `permissions._current_sender_id`。
-- **2. 角色标签注入:** `src/handler.py:44-45` 比对 `sender_id == OWNER_ID`，在 prompt 前缀注入 `[所有者]` 或 `[同事]`。
-- **3. SDK 工具调用触发:** Claude SDK 每次调用工具前，回调 `src/main.py:45` 注册的 `permission_gate`。
-- **4. 门控判定:** `src/permissions.py:15-25` 执行判定逻辑：
+- **1. 身份写入:** 飞书消息到达后，`src/handler.py:53` 调用 `permissions.set_sender(sender_id)` 将 sender_id 写入 `_current_sender_id`（`ContextVar`）。
+- **2. 角色标签注入:** `src/handler.py:55-56` 比对 `sender_id == OWNER_ID`，在 prompt 前缀注入 `[所有者]` 或 `[同事]`。
+- **3. SDK 工具调用触发:** Claude SDK 每次调用工具前，回调 `src/main.py:46` 注册的 `permission_gate`。
+- **4. 门控判定:** `src/permissions.py:29-39` 执行判定逻辑：
   - 仅拦截 `tool_name == "Bash"` 的调用
-  - 若 `_current_sender_id != OWNER_ID`，检查 `command` 是否包含 `SENSITIVE` 列表中的子串
+  - 若 `get_sender() != OWNER_ID`，检查 `command` 是否包含 `SENSITIVE` 列表中的子串
   - 命中 → `PermissionResultDeny`（附中文拒绝消息）
   - 未命中或为所有者 → `PermissionResultAllow`
 
@@ -47,14 +47,15 @@
 
 `deploy`, `git push`, `git merge`, `git reset`, `rm -rf`, `drop `（注意 drop 后有空格）
 
-## 6. `_current_sender_id` 全局状态的已知限制
+## 6. `_current_sender_id` 并发隔离实现
 
-- **当前实现:** `src/permissions.py:12` 定义为模块级全局变量 `str | None`，由 `src/handler.py:42` 在每条消息处理前写入。
-- **已知缺陷:** 代码注释明确标注"仅适用于串行处理"。当前系统为单进程串行消息处理，无并发风险。
-- **并发迭代方向:** 注释指出需改为 per-request context 传递。可选方案包括 `contextvars.ContextVar`（asyncio 原生支持）或将 sender_id 作为参数透传至 `permission_gate`（需 SDK 支持自定义 context）。
+- **当前实现:** `src/permissions.py:14-16` 定义为 `contextvars.ContextVar[str | None]`，通过 `set_sender()` / `get_sender()` 公开 API 访问（`src/permissions.py:19-26`）。
+- **并发安全:** `ContextVar` 是 Python 3.7+ 内置的 per-task 上下文隔离机制，在 `SessionDispatcher` 并发分发场景下，每个 worker task 持有独立的 sender 上下文，`permission_gate` 回调中 `get_sender()` 正确返回当前请求的发送者。
+- **测试覆盖:** `src/__tests__/session.py` 中的 `test_concurrent_sender_isolation` 验证了并发场景下 sender 隔离正确性。
 
 ## 7. Design Rationale
 
 - **`bypassPermissions` + `can_use_tool` 组合:** SDK 层面绕过默认交互式权限确认（因飞书 bot 无人值守），由 `permission_gate` 回调实现应用层细粒度控制。
+- **`contextvars.ContextVar` 而非参数透传:** `permission_gate` 回调签名由 SDK 定义，不支持自定义 context 参数。选择 `ContextVar` 实现 per-task 隔离，无需修改 SDK 调用侧代码。
 - **双层互补:** 代码层仅覆盖 Bash 工具的敏感命令子集；prompt 层覆盖更广的行为边界（如禁止 merge、能力边界、回复风格）。两层非冗余——代码层是硬拦截，prompt 层是软约束。
 - **子串匹配而非正则:** 简单直接，但存在误判风险（如命令中包含 "deploy" 字样的非部署操作）。当前 SENSITIVE 列表足够具体，实际误判概率低。

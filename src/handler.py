@@ -4,8 +4,20 @@ from claude_agent_sdk import ClaudeSDKClient
 from claude_agent_sdk.types import AssistantMessage, ResultMessage, TextBlock
 
 import src.permissions as permissions
-from src.config import OWNER_ID
+from src.config import OWNER_ID, BOT_NAME
 from src.lark import add_reaction, remove_reaction, reply_message
+
+BOT_MENTION = f"@{BOT_NAME}"
+
+
+def compute_session_id(event: dict) -> str:
+    """根据事件计算 session ID：P2P 按用户，群聊按群+用户"""
+    chat_type = event.get("chat_type", "p2p")
+    sender_id = event.get("sender_id", "")
+    chat_id = event.get("chat_id", "unknown")
+    if chat_type == "p2p":
+        return f"p2p_{sender_id}"
+    return f"group_{chat_id}_{sender_id}"
 
 
 def should_respond(event: dict) -> bool:
@@ -20,7 +32,7 @@ def should_respond(event: dict) -> bool:
         return True
 
     if chat_type == "group":
-        if "@_user_1" in content:
+        if BOT_MENTION in content:
             return True
 
     return False
@@ -36,15 +48,15 @@ async def handle_message(client: ClaudeSDKClient, event: dict):
     if not content or not message_id:
         return
 
-    content = content.replace("@_user_1", "").strip()
+    content = content.replace(BOT_MENTION, "").strip()
 
-    # WARNING: 全局状态，仅适用于串行处理。
-    permissions._current_sender_id = sender_id
+    permissions.set_sender(sender_id)
 
     sender_label = "所有者" if sender_id == OWNER_ID else "同事"
     prompt = f"[{sender_label}] 在{'群聊' if chat_type == 'group' else '私聊'}中说：{content}"
 
-    await client.query(prompt)
+    session_id = compute_session_id(event)
+    await client.query(prompt, session_id=session_id)
 
     # 收集回复，首条消息到达时打表情表示"正在处理"
     reply_text = ""
