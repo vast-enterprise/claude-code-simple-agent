@@ -1,0 +1,15 @@
+[project]
+name = "tripo-avatar"
+version = "0.1.0"
+description = "Tripo Digital Avatar — 飞书机器人数字分身"
+requires-python = ">=3.12"
+dependencies = [
+    "claude-agent-sdk>=0.1.56",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["src/__tests__"]
+python_files = "*.py"
+python_classes = "Test*"
+python_functions = "test_*"
+pythonpath = ["."]

@@ -1,4 +1,5 @@
 .playwright-cli
-avatar/config.json
+config.json
 __pycache__
 tmp
+.pytest_cache
