@@ -17,6 +17,12 @@ PERSONA = (ROOT / "persona.md").read_text()
 OWNER_ID: str = CONFIG["owner_open_id"]
 BOT_NAME: str = CONFIG.get("bot_name", "AI Bot")
 
+# headless 环境必须禁用的交互式工具（硬编码，不可配置）
+_HEADLESS_DISALLOWED = ["AskUserQuestion", "ExitPlanMode", "EnterPlanMode"]
+
+# 合并：硬编码 + config.json 中用户自定义的黑名单
+DISALLOWED_TOOLS: list[str] = _HEADLESS_DISALLOWED + CONFIG.get("disallowed_tools", [])
+
 # headless 模式运行约束，拼接到 system prompt，不污染 persona
 HEADLESS_RULES = """
 ## 运行环境约束

@@ -10,7 +10,7 @@ import sys
 from claude_agent_sdk import ClaudeSDKClient, ClaudeAgentOptions
 from claude_agent_sdk.types import SystemPromptPreset
 
-from src.config import ROOT, CONFIG, PERSONA, HEADLESS_RULES
+from src.config import ROOT, CONFIG, PERSONA, HEADLESS_RULES, DISALLOWED_TOOLS
 from src.handler import should_respond, handle_message, compute_session_id
 from src.permissions import permission_gate
 from src.session import SessionDispatcher
@@ -45,8 +45,8 @@ async def main():
             append=PERSONA + HEADLESS_RULES,
         ),
         permission_mode="bypassPermissions",
-        disallowed_tools=["AskUserQuestion", "ExitPlanMode", "EnterPlanMode"],
-        setting_sources=["project"],
+        disallowed_tools=DISALLOWED_TOOLS,
+        setting_sources=["user", "project"],
         can_use_tool=permission_gate,
         env=env,
     )
