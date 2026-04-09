@@ -6,11 +6,9 @@
   "effort": "max",
   "max_turns": 100,
   "disallowed_tools": [
-    "Skill(pua:*)",
-    "Skill(codex:*)",
-    "Skill(superpowers:*)",
-    "Skill(document-skills:*)",
-    "Skill(example-skills:*)"
+    "Skill(sigma)",
+    "Skill(agentic-harness-patterns-zh)",
+    "Skill(huashu-nuwa)"
   ],
   "env": {
     "ANTHROPIC_BASE_URL": "",
