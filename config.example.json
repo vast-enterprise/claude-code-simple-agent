@@ -5,11 +5,6 @@
   "model": "opus",
   "effort": "max",
   "max_turns": 100,
-  "disallowed_tools": [
-    "Skill(sigma)",
-    "Skill(agentic-harness-patterns-zh)",
-    "Skill(huashu-nuwa)"
-  ],
   "env": {
     "ANTHROPIC_BASE_URL": "",
     "ANTHROPIC_AUTH_TOKEN": "",

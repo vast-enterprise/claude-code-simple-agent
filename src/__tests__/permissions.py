@@ -6,7 +6,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from src.permissions import permission_gate, set_sender, PermissionResultAllow, PermissionResultDeny
-from src.config import OWNER_ID, DISALLOWED_SKILLS
+from src.config import OWNER_ID
 import src.permissions as permissions
 
 
@@ -81,23 +81,4 @@ class TestPermissionGate:
     def test_unknown_sender_allowed_on_non_bash(self):
         """sender 为 None 时，非 Bash 工具仍然放行"""
         result = run_async(permission_gate("Read", {"file_path": "/tmp"}, self.ctx))
-        assert isinstance(result, PermissionResultAllow)
-
-    def test_blocked_skill_denied(self):
-        """黑名单中的 Skill 被 permission_gate 拦截"""
-        # 使用 config 里实际配置的黑名单 skill
-        from src import config as cfg_module
-        blocked_skills = cfg_module.DISALLOWED_SKILLS
-        assert len(blocked_skills) > 0, "config.json 中无 disallowed skills"
-        blocked = next(iter(blocked_skills))
-        set_sender(OWNER_ID)
-        result = run_async(permission_gate("Skill", {"skill": blocked}, self.ctx))
-        assert isinstance(result, PermissionResultDeny)
-        # 确认拒绝消息包含 skill 名
-        assert blocked in result.message
-
-    def test_allowed_skill_passes(self):
-        """不在黑名单中的 Skill 正常放行"""
-        set_sender(OWNER_ID)
-        result = run_async(permission_gate("Skill", {"skill": "tripo-repos"}, self.ctx))
         assert isinstance(result, PermissionResultAllow)

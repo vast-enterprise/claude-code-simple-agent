@@ -6,7 +6,7 @@ from claude_agent_sdk.types import (
     PermissionResultAllow, PermissionResultDeny, ToolPermissionContext,
 )
 
-from src.config import OWNER_ID, DISALLOWED_SKILLS
+from src.config import OWNER_ID
 
 SENSITIVE = ["deploy", "git push", "git merge", "git reset", "rm -rf", "drop "]
 
@@ -30,14 +30,6 @@ async def permission_gate(
     tool_name: str, tool_input: dict, context: ToolPermissionContext
 ) -> PermissionResultAllow | PermissionResultDeny:
     """非所有者禁止敏感操作"""
-    # 拦截黑名单中的 Skill 工具调用（disallowed_tools 无法精确到 skill 参数）
-    if tool_name == "Skill" and DISALLOWED_SKILLS:
-        skill_name = tool_input.get("skill", "")
-        if skill_name in DISALLOWED_SKILLS:
-            return PermissionResultDeny(
-                message=f"Skill '{skill_name}' 在当前环境下不可用。"
-            )
-
     sender = _current_sender_id.get()
     if tool_name == "Bash" and sender != OWNER_ID:
         if sender is None:

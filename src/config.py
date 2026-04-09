@@ -18,22 +18,7 @@ OWNER_ID: str = CONFIG["owner_open_id"]
 BOT_NAME: str = CONFIG.get("bot_name", "AI Bot")
 
 # headless 环境必须禁用的交互式工具（硬编码，不可配置）
-_HEADLESS_DISALLOWED = ["AskUserQuestion", "ExitPlanMode", "EnterPlanMode"]
-
-# 从 config.json 的 disallowed_tools 中分离：
-#   - 纯工具名（如 "Edit"）→ 传给 SDK disallowed_tools
-#   - Skill(xxx) 格式 → 提取 skill 名，由 permission_gate 拦截
-_raw_disallowed = CONFIG.get("disallowed_tools", [])
-_skill_blocked: list[str] = []
-_tool_blocked: list[str] = []
-for _item in _raw_disallowed:
-    if _item.startswith("Skill(") and _item.endswith(")"):
-        _skill_blocked.append(_item[6:-1])  # 提取括号内的 skill 名
-    else:
-        _tool_blocked.append(_item)
-
-DISALLOWED_TOOLS: list[str] = _HEADLESS_DISALLOWED + _tool_blocked
-DISALLOWED_SKILLS: set[str] = set(_skill_blocked)
+DISALLOWED_TOOLS: list[str] = ["AskUserQuestion", "ExitPlanMode", "EnterPlanMode"]
 
 # headless 模式运行约束，拼接到 system prompt，不污染 persona
 HEADLESS_RULES = """
