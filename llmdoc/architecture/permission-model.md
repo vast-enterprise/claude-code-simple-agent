@@ -26,8 +26,9 @@
 - **1. 身份写入:** 飞书消息到达后，`src/handler.py:53` 调用 `permissions.set_sender(sender_id)` 将 sender_id 写入 `_current_sender_id`（`ContextVar`）。
 - **2. 角色标签注入:** `src/handler.py:55-56` 比对 `sender_id == OWNER_ID`，在 prompt 前缀注入 `[所有者]` 或 `[同事]`。
 - **3. SDK 工具调用触发:** Claude SDK 每次调用工具前，回调 `src/main.py:46` 注册的 `permission_gate`。
-- **4. 门控判定:** `src/permissions.py:29-39` 执行判定逻辑：
+- **4. 门控判定:** `src/permissions.py:29-41` 执行判定逻辑：
   - 仅拦截 `tool_name == "Bash"` 的调用
+  - 若 `sender is None`（context 丢失，如 SDK 内部调用未经 handler 设置 sender）→ 直接 `PermissionResultDeny`
   - 若 `get_sender() != OWNER_ID`，检查 `command` 是否包含 `SENSITIVE` 列表中的子串
   - 命中 → `PermissionResultDeny`（附中文拒绝消息）
   - 未命中或为所有者 → `PermissionResultAllow`
@@ -35,16 +36,16 @@
 ### 第三层：Prompt 约束（行为引导）
 
 - **5. persona.md 注入:** `src/main.py:42` 通过 `SystemPromptPreset(append=PERSONA)` 将 `persona.md` 全文注入 system prompt，其中"权限规则"和"能力边界"章节定义了 Claude 的行为边界。
-- **6. CLAUDE.md 加载:** Claude SDK 以 `setting_sources=["project"]` 运行（`src/main.py:44`），自动读取项目根目录的 `CLAUDE.md` 作为会话级指令。
+- **6. CLAUDE.md 加载:** Claude SDK 以 `setting_sources=["user", "project"]` 运行，自动读取用户级和项目级 settings，加载 skills/plugins/mcp。通过 `config.json` 的 `disallowed_tools` 字段配置黑名单裁剪不需要的工具。
 
 ## 4. 所有者/非所有者分级规则
 
-| 维度 | 所有者（`sender_id == OWNER_ID`） | 非所有者 |
-|------|----------------------------------|---------|
-| Bash 工具 | 全部放行 | SENSITIVE 命令被 Deny |
-| 非 Bash 工具 | 全部放行 | 全部放行（代码层无拦截） |
-| 部署操作 | prompt 层允许 staging | prompt 层拒绝一切部署 |
-| PR 操作 | 可创建/查看，prompt 层禁止 merge | 同左（prompt 约束，非代码强制） |
+| 维度 | 所有者（`sender_id == OWNER_ID`） | 非所有者 | Unknown（`sender is None`） |
+|------|----------------------------------|---------|---------------------------|
+| Bash 工具 | 全部放行 | SENSITIVE 命令被 Deny | 一律 Deny |
+| 非 Bash 工具 | 全部放行 | 全部放行（代码层无拦截） | 全部放行 |
+| 部署操作 | prompt 层允许 staging | prompt 层拒绝一切部署 | 代码层 Deny + prompt 层拒绝 |
+| PR 操作 | 可创建/查看，prompt 层禁止 merge | 同左（prompt 约束，非代码强制） | 同非所有者 |
 
 ## 5. SENSITIVE 命令列表
 
