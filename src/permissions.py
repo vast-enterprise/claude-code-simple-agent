@@ -30,7 +30,12 @@ async def permission_gate(
     tool_name: str, tool_input: dict, context: ToolPermissionContext
 ) -> PermissionResultAllow | PermissionResultDeny:
     """非所有者禁止敏感操作"""
-    if tool_name == "Bash" and _current_sender_id.get() != OWNER_ID:
+    sender = _current_sender_id.get()
+    if tool_name == "Bash" and sender != OWNER_ID:
+        if sender is None:
+            return PermissionResultDeny(
+                message="无法识别请求来源，拒绝执行敏感操作。"
+            )
         cmd = tool_input.get("command", "")
         if any(p in cmd for p in SENSITIVE):
             return PermissionResultDeny(

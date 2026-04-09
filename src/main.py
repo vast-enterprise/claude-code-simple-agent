@@ -80,6 +80,8 @@ async def main():
         if pid:
             print(f"[Avatar] 已终止 Claude 进程组 (PID {pid})")
         print("[Avatar] 清理完成，退出")
+        # TODO: 信号退出跳过 dispatcher.shutdown()，当前无资源泄漏（os._exit 终止进程），
+        # 但未来 worker 若持有外部资源需在此处增加清理逻辑。
         os._exit(0)
 
     signal.signal(signal.SIGTERM, cleanup)

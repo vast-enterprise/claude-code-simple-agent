@@ -56,7 +56,7 @@
 
 - **当前实现:** `src/permissions.py:14-16` 定义为 `contextvars.ContextVar[str | None]`，通过 `set_sender()` / `get_sender()` 公开 API 访问（`src/permissions.py:19-26`）。
 - **并发安全:** `ContextVar` 是 Python 3.7+ 内置的 per-task 上下文隔离机制，在 `SessionDispatcher` 并发分发场景下，每个 worker task 持有独立的 sender 上下文，`permission_gate` 回调中 `get_sender()` 正确返回当前请求的发送者。
-- **测试覆盖:** `src/__tests__/session.py` 中的 `test_concurrent_sender_isolation` 验证了并发场景下 sender 隔离正确性。
+- **测试覆盖:** `src/__tests__/permissions.py` 中的 `test_concurrent_sender_isolation` 验证了并发场景下 sender 隔离正确性。
 
 ## 7. Design Rationale
 

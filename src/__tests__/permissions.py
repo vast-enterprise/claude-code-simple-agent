@@ -18,6 +18,8 @@ class TestPermissionGate:
     @pytest.fixture(autouse=True)
     def _ctx(self):
         self.ctx = MagicMock()
+        # 每个测试前重置 ContextVar，防止跨测试污染
+        permissions._current_sender_id.set(None)
 
     def test_owner_allowed_on_deploy(self):
         set_sender(OWNER_ID)
@@ -69,3 +71,14 @@ class TestPermissionGate:
         run_async(run())
         assert results["owner"] == "PermissionResultAllow"
         assert results["other"] == "PermissionResultDeny"
+
+    def test_unknown_sender_denied_on_bash(self):
+        """sender 为 None（context 丢失）时，Bash 调用一律 deny"""
+        # 新的 asyncio.run 会创建全新 context，_current_sender_id 为默认值 None
+        result = run_async(permission_gate("Bash", {"command": "ls -la"}, self.ctx))
+        assert isinstance(result, PermissionResultDeny)
+
+    def test_unknown_sender_allowed_on_non_bash(self):
+        """sender 为 None 时，非 Bash 工具仍然放行"""
+        result = run_async(permission_gate("Read", {"file_path": "/tmp"}, self.ctx))
+        assert isinstance(result, PermissionResultAllow)
