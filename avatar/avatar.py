@@ -5,6 +5,7 @@ import asyncio
 import json
 import os
 import signal
+import subprocess
 import sys
 from pathlib import Path
 
@@ -15,13 +16,17 @@ from claude_agent_sdk.types import (
 )
 
 ROOT = Path(__file__).resolve().parent.parent
-CONFIG = json.loads((Path(__file__).parent / "config.json").read_text())
+_config_path = Path(__file__).parent / "config.json"
+if not _config_path.exists():
+    print("错误：请先复制 config.example.json 为 config.json 并填写配置", file=sys.stderr)
+    sys.exit(1)
+CONFIG = json.loads(_config_path.read_text())
 PERSONA = (Path(__file__).parent / "persona.md").read_text()
 
 OWNER_ID = CONFIG["owner_open_id"]
 SENSITIVE = ["deploy", "git push", "git merge", "git reset", "rm -rf", "drop "]
 
-# 闭包状态：当前消息的 sender_id
+# WARNING: 全局状态，仅适用于串行处理。并发迭代时必须改为 per-request context 传递。
 _current_sender_id: str | None = None
 
 
@@ -40,8 +45,6 @@ async def permission_gate(
 
 def add_reaction(message_id: str, emoji_type: str = "OnIt") -> str | None:
     """给消息打表情回复，返回 reaction_id 用于后续删除"""
-    import subprocess
-
     params = json.dumps({"message_id": message_id})
     data = json.dumps({"reaction_type": {"emoji_type": emoji_type}})
     result = subprocess.run(
@@ -62,27 +65,25 @@ def add_reaction(message_id: str, emoji_type: str = "OnIt") -> str | None:
 
 def remove_reaction(message_id: str, reaction_id: str):
     """移除消息上的表情回复"""
-    import subprocess
-
     params = json.dumps({"message_id": message_id, "reaction_id": reaction_id})
-    subprocess.run(
+    result = subprocess.run(
         [
             "lark-cli", "im", "reactions", "delete",
             "--params", params, "--as", "bot",
         ],
         capture_output=True, text=True, timeout=10,
     )
+    if result.returncode != 0:
+        print(f"[Avatar] 移除表情失败: {result.stderr[:200]}", file=sys.stderr)
 
 
 def reply_message(message_id: str, text: str):
     """通过 lark-cli 回复飞书消息"""
-    import subprocess
-
     if len(text) > 4000:
         text = text[:3950] + "\n\n...(回复过长，已截断)"
 
     data = json.dumps({"msg_type": "text", "content": json.dumps({"text": text})})
-    subprocess.run(
+    result = subprocess.run(
         [
             "lark-cli", "api", "POST",
             f"/open-apis/im/v1/messages/{message_id}/reply",
@@ -90,6 +91,8 @@ def reply_message(message_id: str, text: str):
         ],
         capture_output=True, text=True, timeout=15,
     )
+    if result.returncode != 0:
+        print(f"[Avatar] 回复消息失败: {result.stderr[:200]}", file=sys.stderr)
 
 
 def should_respond(event: dict) -> bool:
@@ -109,7 +112,7 @@ def should_respond(event: dict) -> bool:
     if chat_type == "group":
         # compact 模式下 @bot 的消息 content 中会包含 @_user_1 等标记
         # 或者直接包含 bot 名称
-        if "@_user_1" in content or "@_all" in content:
+        if "@_user_1" in content:
             return True
 
     return False
@@ -186,7 +189,7 @@ async def main():
     options = ClaudeAgentOptions(
         cwd=str(ROOT),
         model=CONFIG["model"],
-        effort=CONFIG.get("effort", "high"),
+        effort=CONFIG.get("effort", "max"),
         max_turns=CONFIG.get("max_turns", 100),
         system_prompt=SystemPromptPreset(type="preset", preset="claude_code", append=PERSONA),
         permission_mode="bypassPermissions",
@@ -201,6 +204,19 @@ async def main():
 
     client = ClaudeSDKClient(options=options)
 
+    def _force_kill_sdk_process(client: ClaudeSDKClient):
+        """强制终止 SDK 子进程。依赖 claude_agent_sdk==0.1.x 内部结构，升级时需验证。"""
+        try:
+            transport = getattr(client, '_transport', None)
+            if transport:
+                proc = getattr(transport, '_process', None)
+                if proc and proc.returncode is None:
+                    os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+                    return proc.pid
+        except (ProcessLookupError, OSError):
+            pass
+        return None
+
     # 注册清理函数：确保 SIGTERM/SIGINT/异常退出时杀掉所有子进程
     def cleanup(signum=None, frame=None):
         print(f"\n[Avatar] 收到信号 {signum}，正在清理子进程...")
@@ -211,15 +227,9 @@ async def main():
         except (ProcessLookupError, OSError):
             pass
         # 杀 Claude SDK 子进程
-        if hasattr(client, '_transport') and client._transport:
-            transport = client._transport
-            if hasattr(transport, '_process') and transport._process:
-                proc = transport._process
-                try:
-                    os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
-                    print(f"[Avatar] 已终止 Claude 进程组 (PID {proc.pid})")
-                except (ProcessLookupError, OSError):
-                    pass
+        pid = _force_kill_sdk_process(client)
+        if pid:
+            print(f"[Avatar] 已终止 Claude 进程组 (PID {pid})")
         print("[Avatar] 清理完成，退出")
         os._exit(0)
 
@@ -255,7 +265,7 @@ async def main():
     except KeyboardInterrupt:
         print("\n[Avatar] 正在关闭...")
     finally:
-        # 正常退出也要清理
+        # 正常退出路径（listener EOF）。信号退出走 cleanup() → os._exit(0)，不经过此处。
         if listener.returncode is None:
             listener.terminate()
             await listener.wait()
