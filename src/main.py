@@ -15,6 +15,9 @@ from src.handler import should_respond, handle_message, compute_session_id
 from src.permissions import permission_gate
 from src.session import SessionDispatcher
 
+# 优雅关闭信号
+_shutdown = asyncio.Event()
+
 
 async def start_event_listener():
     """启动 lark-cli 事件订阅子进程（独立进程组）"""
@@ -26,6 +29,25 @@ async def start_event_listener():
         stderr=asyncio.subprocess.DEVNULL,
         start_new_session=True,
     )
+
+
+async def _read_or_shutdown(reader) -> bytes | None:
+    """readline + shutdown event 多路复用，shutdown 触发时返回 None"""
+    read_task = asyncio.ensure_future(reader.readline())
+    shutdown_task = asyncio.ensure_future(_shutdown.wait())
+    done, pending = await asyncio.wait(
+        [read_task, shutdown_task],
+        return_when=asyncio.FIRST_COMPLETED,
+    )
+    for t in pending:
+        t.cancel()
+        try:
+            await t
+        except asyncio.CancelledError:
+            pass
+    if shutdown_task in done:
+        return None
+    return read_task.result()
 
 
 async def main():
@@ -55,48 +77,22 @@ async def main():
     print("[Avatar] 飞书事件监听已启动，等待消息...")
 
     client = ClaudeSDKClient(options=options)
-
-    def _force_kill_sdk_process(c: ClaudeSDKClient) -> int | None:
-        """强制终止 SDK 子进程。依赖 claude_agent_sdk==0.1.x 内部结构，升级时需验证。"""
-        try:
-            transport = getattr(c, '_transport', None)
-            if transport:
-                proc = getattr(transport, '_process', None)
-                if proc and proc.returncode is None:
-                    os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
-                    return proc.pid
-        except (ProcessLookupError, OSError):
-            pass
-        return None
-
-    def cleanup(signum=None, frame=None):
-        print(f"\n[Avatar] 收到信号 {signum}，正在清理子进程...")
-        try:
-            os.killpg(os.getpgid(listener.pid), signal.SIGKILL)
-            print(f"[Avatar] 已终止 lark-cli 进程组 (PID {listener.pid})")
-        except (ProcessLookupError, OSError):
-            pass
-        pid = _force_kill_sdk_process(client)
-        if pid:
-            print(f"[Avatar] 已终止 Claude 进程组 (PID {pid})")
-        print("[Avatar] 清理完成，退出")
-        # TODO: 信号退出跳过 dispatcher.shutdown()，当前无资源泄漏（os._exit 终止进程），
-        # 但未来 worker 若持有外部资源需在此处增加清理逻辑。
-        os._exit(0)
-
-    # SessionDispatcher 必须在信号注册前创建，确保信号处理函数能访问它
     dispatcher = SessionDispatcher()
 
-    signal.signal(signal.SIGTERM, cleanup)
-    signal.signal(signal.SIGINT, cleanup)
+    def _on_signal(signum, frame):
+        print(f"\n[Avatar] 收到信号 {signum}，准备优雅关闭...")
+        _shutdown.set()
+
+    signal.signal(signal.SIGTERM, _on_signal)
+    signal.signal(signal.SIGINT, _on_signal)
 
     try:
         await client.connect()
         print("[Avatar] Claude SDK 已连接，开始处理消息")
 
-        while True:
-            line_bytes = await listener.stdout.readline()
-            if not line_bytes:
+        while not _shutdown.is_set():
+            line_bytes = await _read_or_shutdown(listener.stdout)
+            if line_bytes is None or len(line_bytes) == 0:
                 break
             line = line_bytes.decode().strip()
             if not line:
@@ -119,11 +115,17 @@ async def main():
     except KeyboardInterrupt:
         print("\n[Avatar] 正在关闭...")
     finally:
-        # 正常退出路径（listener EOF）。信号退出走 cleanup() → os._exit(0)，不经过此处。
+        print("[Avatar] 开始清理...")
+        # 1. 停止接收新消息
         if listener.returncode is None:
             listener.terminate()
-            await listener.wait()
-        await dispatcher.shutdown()
+            try:
+                await asyncio.wait_for(listener.wait(), timeout=5)
+            except asyncio.TimeoutError:
+                listener.kill()
+        # 2. 等待正在处理的消息完成（最多 10 秒），超时后强制取消
+        await dispatcher.drain_all(timeout=10)
+        # 3. 断开 SDK（内部有 5s grace + SIGTERM + SIGKILL 清理链）
         await client.disconnect()
         print("[Avatar] 已退出")
 

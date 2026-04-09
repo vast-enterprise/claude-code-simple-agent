@@ -116,3 +116,35 @@ class TestSessionDispatcher:
 
         run_async(run())
         assert all(t.cancelled() or t.done() for t in dispatcher._workers.values())
+
+    def test_drain_all_waits_for_all_sessions(self):
+        """drain_all 等待所有 session 队列清空"""
+        dispatcher = SessionDispatcher()
+        executed = []
+
+        async def handler(label):
+            await asyncio.sleep(0.05)
+            executed.append(label)
+
+        async def run():
+            await dispatcher.dispatch("s1", handler("a"))
+            await dispatcher.dispatch("s2", handler("b"))
+            await dispatcher.drain_all()
+
+        run_async(run())
+        assert sorted(executed) == ["a", "b"]
+        assert all(t.cancelled() or t.done() for t in dispatcher._workers.values())
+
+    def test_drain_all_timeout_forces_shutdown(self):
+        """drain_all 超时后强制取消 worker"""
+        dispatcher = SessionDispatcher()
+
+        async def stuck_handler():
+            await asyncio.sleep(100)  # 永远不会完成
+
+        async def run():
+            await dispatcher.dispatch("s1", stuck_handler())
+            await dispatcher.drain_all(timeout=0.1)
+
+        run_async(run())
+        assert all(t.cancelled() or t.done() for t in dispatcher._workers.values())

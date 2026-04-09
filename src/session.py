@@ -40,3 +40,18 @@ class SessionDispatcher:
         for task in self._workers.values():
             task.cancel()
         await asyncio.gather(*self._workers.values(), return_exceptions=True)
+
+    async def drain_all(self, timeout: float = 10):
+        """等待所有 session 队列清空，超时后强制 shutdown"""
+        if not self._queues:
+            return
+        try:
+            await asyncio.wait_for(
+                asyncio.gather(
+                    *(q.join() for q in self._queues.values())
+                ),
+                timeout=timeout,
+            )
+        except asyncio.TimeoutError:
+            pass  # 超时后强制 shutdown
+        await self.shutdown()
