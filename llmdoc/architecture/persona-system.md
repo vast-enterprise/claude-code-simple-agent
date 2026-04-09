@@ -8,7 +8,7 @@
 ## 2. Core Components
 
 - `persona.md` (`Identity`, `Tone`, `OKR`, `CapabilityBoundary`, `PermissionRules`, `ResponseFormat`): 人格定义文件，运行时被 `src/config.py` 读取为字符串。
-- `src/config.py` (`ROOT`, `CONFIG`, `PERSONA`, `OWNER_ID`): 配置加载模块，将 `persona.md` 内容读入 `PERSONA` 常量供注入使用。
+- `src/config.py` (`ROOT`, `CONFIG`, `PERSONA`, `HEADLESS_RULES`, `OWNER_ID`): 配置加载模块，将 `persona.md` 内容读入 `PERSONA` 常量，`HEADLESS_RULES` 定义 headless 模式运行约束（禁止交互式工具），两者独立存放。
 - `src/main.py` (`main`): 构造 `ClaudeAgentOptions` 时以 `system_prompt=SystemPromptPreset(append=PERSONA)` 将人格文本追加到 system prompt。
 - `src/permissions.py` (`permission_gate`, `_current_sender_id`, `SENSITIVE`): 运行时权限执行点，在代码层拦截非所有者的敏感 Bash 命令。
 - `CLAUDE.md`: Claude Code 项目级指令文件，通过 `setting_sources=["project"]` 自动加载，定义 Agent 行为约束和 Skills 入口。
@@ -16,7 +16,7 @@
 ## 3. Execution Flow (LLM Retrieval Map)
 
 - **1. 配置加载:** `src/config.py` 在进程启动时读取 `persona.md` 文本内容，存入 `PERSONA` 常量。
-- **2. SDK 初始化:** `src/main.py:26-32` 构造 `ClaudeAgentOptions`，设置 `system_prompt=SystemPromptPreset(append=PERSONA)`，`setting_sources=["project"]`，`permission_mode="bypassPermissions"`，`can_use_tool=permission_gate`。
+- **2. SDK 初始化:** `src/main.py` 构造 `ClaudeAgentOptions`，设置 `system_prompt=SystemPromptPreset(append=PERSONA + HEADLESS_RULES)`，`disallowed_tools=["AskUserQuestion", "ExitPlanMode", "EnterPlanMode"]`，`setting_sources=["project"]`，`permission_mode="bypassPermissions"`，`can_use_tool=permission_gate`。
 - **3. CLAUDE.md 加载:** Claude SDK 启动时自动扫描 `cwd`（即 `tripo-work-center`）下的 `.claude/` 目录，将 `CLAUDE.md` 作为项目级指令注入会话。
 - **4. 人格注入:** `persona.md` 的文本通过 `append` 模式追加到 system prompt——与 `CLAUDE.md` 注入的差异在于：`CLAUDE.md` 是默认加载的项目配置，`persona.md` 是人格层追加。
 - **5. 消息处理:** `src/handler.py:54-60` 在 prompt 中添加 `[所有者]` 或 `[同事]` 标签后发送给 SDK。
@@ -33,14 +33,15 @@
 | 替换（无 append） | 丢弃 Claude Code 默认提示 | 完全自定义 Agent |
 | 追加（append） | 保留默认提示，补充人格规则 | 数字分身（需要保留 SDK 能力） |
 
-### 4.2 CLAUDE.md 与 persona.md 的分工
+### 4.2 CLAUDE.md、persona.md 与 HEADLESS_RULES 的分工
 
 | 文件 | 作用层级 | 内容类型 |
 |------|----------|----------|
 | `CLAUDE.md` | SDK 自动加载（project 配置） | 行为约束、Skills 入口、铁律 |
 | `persona.md` | 通过 `append` 注入 | 身份认同、语气风格、能力边界 |
+| `HEADLESS_RULES` | 通过 `append` 拼接（`src/config.py`） | 运行环境约束（禁止交互式工具） |
 
-两者共同构成完整的 Agent 行为规范：前者定义"Agent 能做什么"，后者定义"Agent 以什么身份和风格做"。
+三者共同构成完整的 Agent 行为规范：`CLAUDE.md` 定义"Agent 能做什么"，`persona.md` 定义"Agent 以什么身份和风格做"，`HEADLESS_RULES` 定义"Agent 在什么环境下运行"。`HEADLESS_RULES` 独立于 `persona.md`，确保人格文件保持纯粹的人物设定，不混入运行时技术约束。
 
 ### 4.3 边界规则的执行方式
 

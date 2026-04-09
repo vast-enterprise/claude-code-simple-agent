@@ -2,21 +2,26 @@
 
 ## 1. Identity
 
-- **What it is:** Digital Avatar 的双层权限控制体系——代码强制层（运行时拦截）与 prompt 约束层（行为引导）。
+- **What it is:** Digital Avatar 的三层权限控制体系——工具禁用层（SDK 硬拦截）、代码强制层（运行时拦截）与 prompt 约束层（行为引导）。
 - **Purpose:** 确保非所有者无法通过飞书消息触发敏感系统操作，同时通过 prompt 约束覆盖代码未拦截的行为边界。
 
 ## 2. Core Components
 
 - `src/permissions.py` (`permission_gate`, `set_sender`, `get_sender`, `_current_sender_id`, `SENSITIVE`): 运行时权限门控，唯一的代码强制执行点。`_current_sender_id` 为 `contextvars.ContextVar`，支持并发隔离。
 - `src/handler.py` (`handle_message`, `compute_session_id`): 调用 `permissions.set_sender(sender_id)` 写入 contextvars，构造带 `[所有者]`/`[同事]` 角色标签的 prompt。
-- `src/main.py` (`main`): 注册 `permission_gate` 为 `ClaudeAgentOptions.can_use_tool` 回调，设置 `permission_mode="bypassPermissions"`。
-- `src/config.py` (`OWNER_ID`): 从 `config.json` 的 `owner_open_id` 字段加载，作为所有者身份判定基准。
+- `src/main.py` (`main`): 注册 `permission_gate` 为 `ClaudeAgentOptions.can_use_tool` 回调，设置 `permission_mode="bypassPermissions"`；通过 `disallowed_tools` 硬拦截交互式工具；拼接 `HEADLESS_RULES` 到 system prompt。
+- `src/config.py` (`OWNER_ID`, `HEADLESS_RULES`): 从 `config.json` 的 `owner_open_id` 字段加载所有者身份；`HEADLESS_RULES` 定义 headless 模式运行约束（禁止交互式工具、需确认时文本说明），独立于 `persona.md` 存放。
 - `persona.md` (权限规则章节): prompt 层权限定义——所有者全权，同事只读+非敏感。
 - `CLAUDE.md` (行为约束表): prompt 层行为约束——禁止 merge、状态变更需确认、通知后阻塞等。
 
 ## 3. Execution Flow (LLM Retrieval Map)
 
-### 第一层：代码强制（运行时拦截）
+### 第一层：工具禁用（SDK 硬拦截）
+
+- **0. disallowed_tools:** `src/main.py` 通过 `ClaudeAgentOptions(disallowed_tools=["AskUserQuestion", "ExitPlanMode", "EnterPlanMode"])` 在 SDK 层面禁用交互式工具。模型尝试调用时 CLI 直接返回拒绝，不经过 `permission_gate`。
+- **0a. HEADLESS_RULES prompt 引导:** `src/config.py` 定义 `HEADLESS_RULES` 常量，通过 `SystemPromptPreset(append=PERSONA + HEADLESS_RULES)` 拼接到 system prompt，从 prompt 层引导模型不要尝试调用这些工具。与 `disallowed_tools` 形成双保险。
+
+### 第二层：代码强制（运行时拦截）
 
 - **1. 身份写入:** 飞书消息到达后，`src/handler.py:53` 调用 `permissions.set_sender(sender_id)` 将 sender_id 写入 `_current_sender_id`（`ContextVar`）。
 - **2. 角色标签注入:** `src/handler.py:55-56` 比对 `sender_id == OWNER_ID`，在 prompt 前缀注入 `[所有者]` 或 `[同事]`。
@@ -27,7 +32,7 @@
   - 命中 → `PermissionResultDeny`（附中文拒绝消息）
   - 未命中或为所有者 → `PermissionResultAllow`
 
-### 第二层：Prompt 约束（行为引导）
+### 第三层：Prompt 约束（行为引导）
 
 - **5. persona.md 注入:** `src/main.py:42` 通过 `SystemPromptPreset(append=PERSONA)` 将 `persona.md` 全文注入 system prompt，其中"权限规则"和"能力边界"章节定义了 Claude 的行为边界。
 - **6. CLAUDE.md 加载:** Claude SDK 以 `setting_sources=["project"]` 运行（`src/main.py:44`），自动读取项目根目录的 `CLAUDE.md` 作为会话级指令。
@@ -58,4 +63,5 @@
 - **`bypassPermissions` + `can_use_tool` 组合:** SDK 层面绕过默认交互式权限确认（因飞书 bot 无人值守），由 `permission_gate` 回调实现应用层细粒度控制。
 - **`contextvars.ContextVar` 而非参数透传:** `permission_gate` 回调签名由 SDK 定义，不支持自定义 context 参数。选择 `ContextVar` 实现 per-task 隔离，无需修改 SDK 调用侧代码。
 - **双层互补:** 代码层仅覆盖 Bash 工具的敏感命令子集；prompt 层覆盖更广的行为边界（如禁止 merge、能力边界、回复风格）。两层非冗余——代码层是硬拦截，prompt 层是软约束。
+- **`disallowed_tools` 解决 headless 环境工具不可用问题:** Claude Code preset 的 system prompt 包含 `AskUserQuestion`、`ExitPlanMode`、`EnterPlanMode` 等交互式工具定义，模型会尝试调用。`disallowed_tools` 在 CLI 层面硬拦截，`HEADLESS_RULES` 在 prompt 层面引导模型不去尝试。两者分离于 `persona.md` 之外——persona 只管人格定义，运行环境约束由 `HEADLESS_RULES` 承担。
 - **子串匹配而非正则:** 简单直接，但存在误判风险（如命令中包含 "deploy" 字样的非部署操作）。当前 SENSITIVE 列表足够具体，实际误判概率低。

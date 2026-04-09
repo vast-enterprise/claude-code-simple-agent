@@ -31,7 +31,7 @@ tripo-work-center/
 │   ├── session.py       # 并发调度器（SessionDispatcher）：per-session 队列 + worker
 │   ├── permissions.py   # 工具调用权限门控（permission_gate），contextvars 隔离
 │   ├── lark.py          # 飞书交互封装（reaction、reply）
-│   ├── config.py        # 配置加载（config.json + persona.md）
+│   ├── config.py        # 配置加载（config.json + persona.md + HEADLESS_RULES）
 │   └── __tests__/       # 单元测试（handler、permissions、lark、session）
 ├── persona.md           # 数字分身人格定义，注入 system_prompt
 ├── config.example.json  # 配置模板（owner_id、模型参数、API 环境变量）
@@ -57,7 +57,7 @@ permissions.py ──→ config.py（OWNER_ID）
    │──→ contextvars（_current_sender_id 为 ContextVar，支持并发隔离）
    │
 lark.py ──→ 无内部依赖（叶节点，仅调用 lark-cli subprocess）
-config.py ──→ 无内部依赖（叶节点，读取 config.json + persona.md）
+config.py ──→ 无内部依赖（叶节点，读取 config.json + persona.md + HEADLESS_RULES）
 ```
 
 ## 6. 数据流概要
