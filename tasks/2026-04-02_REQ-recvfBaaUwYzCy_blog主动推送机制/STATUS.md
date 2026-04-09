@@ -34,3 +34,10 @@
 | 2026-04-02 20:48 | 8.闭环 | Code Review 完成（1 CRITICAL 已修复），19/19 单元测试通过，测试计划+报告已输出 |
 | 2026-04-02 20:52 | 8.闭环 | CMS Code Review 修复推送：重复图片替换(C1)、缓存重置(C2)、角色检查(H1)、图片大小限制(H2)、publishedAt(H3)、body 防御(M4)，19/19 测试通过 |
 | 2026-04-02 21:30 | 8.闭环 | 集成测试完成：发现并修复 2 个 CRITICAL bug（req.json body 解析 + locale 参数写法），5/6 API 测试通过，1 DEFERRED（图片下载需外网），报告已更新，飞书已通知 |
+| 2026-04-09 11:00 | 6.开发 | 新增 heroImage 字段支持（外部 URL 下载上传）、提取 downloadAndUploadImage 公共函数、heroImage URL 校验、8 个新测试用例（36 total） |
+| 2026-04-09 11:30 | 6.开发 | 移除 editor 角色限制（所有认证用户可调用）、isLegacy 字段改为 sidebar 只读可见 |
+| 2026-04-09 13:15 | 6.开发 | 修复 media-image 输出格式：从 HTML 标签 `<media-image>` 改为 MDC 内联语法 `:media-image{}`，匹配 isLegacy=false 的 MDC 解析管线 |
+| 2026-04-09 13:30 | 7.PR | rebase origin/main 解决冲突（payload.config.ts + content-editing.md），52/52 测试通过，force push |
+| 2026-04-09 14:00 | 9.验收 | 用户自测通过，tripo-cms PR #37 + fe-tripo-homepage PR #180 均已合并，两仓库 main 已同步 |
+| 2026-04-09 14:05 | 9.验收 | 执行表状态→「测试中」，需求池状态→「验收/提测中」 |
+| 2026-04-09 14:10 | 10.发版 | staging 部署已触发（CMS + 前端），等待 staging 验证后走发车流程上线 production |

@@ -3,3 +3,4 @@ config.json
 __pycache__
 tmp
 .pytest_cache
+.DS_Store
