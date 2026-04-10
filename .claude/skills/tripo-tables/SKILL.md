@@ -77,7 +77,29 @@ Sprint版本计划.部署进度（接力式）:
 
 发车上线三条路径和完整 Workflow/option_id 速查：[references/release-flow.md](references/release-flow.md)
 
-## 用户需求查询
+## 记录查询
+
+### 按关键词搜索记录（优先使用）
+
+在任意表中按关键词搜索，自动分页、自动解析返回结构：
+
+```bash
+python3 <skill-path>/scripts/search_records.py <表名|table_id> <关键词> [--field 字段名]
+```
+
+示例：
+
+```bash
+# 在发车中需求表搜 blog 相关记录
+python3 <skill-path>/scripts/search_records.py 发车中需求 blog
+
+# 在执行中需求表按研发Owner搜
+python3 <skill-path>/scripts/search_records.py 执行中需求 郭凯南 --field 研发Owner
+```
+
+支持表名简写：产品需求池 / 执行中需求 / 发车中需求 / Sprint版本计划 / Hotfix管理 / 需求Bug管理 / 技术需求管理
+
+### 按用户查询需求
 
 查询指定用户在三个表中的需求：
 
@@ -87,6 +109,12 @@ python3 <skill-path>/scripts/query_user_requirements.py <用户名|open_id|我>
 
 - `我` 自动调用 `lark-cli contact +get-me` 获取当前用户
 - 字段映射参考：[references/field-mapping.md](references/field-mapping.md)
+
+### 手写 lark-cli 查询前必读
+
+`record-list` 返回结构与直觉不同，手写解析极易出错。详见：[references/lark-cli-gotchas.md](references/lark-cli-gotchas.md)
+
+关键点：返回的是 `data.data[]`（二维数组）+ `data.fields[]` + `data.record_id_list[]`，**不是** `data.items[]`。
 
 ## 通知模板
 

@@ -1,7 +1,8 @@
 """Session 调度器：per-session 队列 + worker"""
 
 import asyncio
-import sys
+
+from src.config import log_error
 
 
 class SessionDispatcher:
@@ -26,7 +27,7 @@ class SessionDispatcher:
             try:
                 await coro
             except Exception as e:
-                print(f"[Session {session_id}] 处理出错: {e}", file=sys.stderr)
+                log_error(f"[Session {session_id}] 处理出错: {e}")
             finally:
                 queue.task_done()
 

@@ -7,6 +7,7 @@ import pytest
 
 from src.handler import should_respond, handle_message, compute_session_id, BOT_MENTION
 from src.config import OWNER_ID
+from src.pool import ClientPool
 from claude_agent_sdk.types import AssistantMessage, ResultMessage, TextBlock
 import src.permissions as permissions
 
@@ -57,7 +58,25 @@ class TestComputeSessionId:
         assert compute_session_id({"sender_id": "ou_abc"}) == "p2p_ou_abc"
 
 
+def _make_mock_pool(messages):
+    """构造 mock pool：pool.get() 返回一个 mock client，client.receive_response() 产出 messages"""
+    client = MagicMock()
+    client.query = AsyncMock()
+
+    async def fake_receive():
+        for msg in messages:
+            yield msg
+
+    client.receive_response = fake_receive
+
+    pool = MagicMock(spec=ClientPool)
+    pool.get = AsyncMock(return_value=client)
+    return pool, client
+
+
 class TestHandleMessage:
+    """handle_message 从 pool 获取独立 client，用 receive_response() 读回复"""
+
     def _event(self, content="hello", sender_id=None, chat_type="p2p"):
         return {
             "content": content,
@@ -70,15 +89,13 @@ class TestHandleMessage:
     @patch("src.handler.remove_reaction")
     @patch("src.handler.add_reaction", return_value="r_abc")
     def test_full_flow_replies_and_cleans_reaction(self, mock_add, mock_remove, mock_reply):
-        client = MagicMock()
-        client.query = AsyncMock()
+        messages = [
+            AssistantMessage(content=[TextBlock(text="回复内容")], model="sonnet"),
+            ResultMessage(subtype="result", duration_ms=100, duration_api_ms=80, is_error=False, num_turns=1, session_id="x"),
+        ]
+        pool, client = _make_mock_pool(messages)
 
-        async def fake_response():
-            yield AssistantMessage(content=[TextBlock(text="回复内容")], model="sonnet")
-            yield ResultMessage(subtype="result", duration_ms=100, duration_api_ms=80, is_error=False, num_turns=1, session_id="default")
-
-        client.receive_response = fake_response
-        run_async(handle_message(client, self._event()))
+        run_async(handle_message(pool, self._event()))
 
         client.query.assert_called_once()
         mock_add.assert_called_once_with("om_test")
@@ -89,15 +106,13 @@ class TestHandleMessage:
     @patch("src.handler.remove_reaction")
     @patch("src.handler.add_reaction", return_value="r_abc")
     def test_p2p_uses_sender_id_as_session(self, mock_add, mock_remove, mock_reply):
-        client = MagicMock()
-        client.query = AsyncMock()
+        messages = [
+            AssistantMessage(content=[TextBlock(text="ok")], model="sonnet"),
+            ResultMessage(subtype="result", duration_ms=100, duration_api_ms=80, is_error=False, num_turns=1, session_id="x"),
+        ]
+        pool, client = _make_mock_pool(messages)
 
-        async def fake_response():
-            yield AssistantMessage(content=[TextBlock(text="ok")], model="sonnet")
-            yield ResultMessage(subtype="result", duration_ms=100, duration_api_ms=80, is_error=False, num_turns=1, session_id="default")
-
-        client.receive_response = fake_response
-        run_async(handle_message(client, self._event(sender_id="ou_user_123")))
+        run_async(handle_message(pool, self._event(sender_id="ou_user_123")))
 
         _, kwargs = client.query.call_args
         assert kwargs["session_id"] == "p2p_ou_user_123"
@@ -106,57 +121,37 @@ class TestHandleMessage:
     @patch("src.handler.remove_reaction")
     @patch("src.handler.add_reaction", return_value="r_abc")
     def test_group_uses_chat_id_as_session(self, mock_add, mock_remove, mock_reply):
-        client = MagicMock()
-        client.query = AsyncMock()
+        messages = [
+            AssistantMessage(content=[TextBlock(text="ok")], model="sonnet"),
+            ResultMessage(subtype="result", duration_ms=100, duration_api_ms=80, is_error=False, num_turns=1, session_id="x"),
+        ]
+        pool, client = _make_mock_pool(messages)
 
-        async def fake_response():
-            yield AssistantMessage(content=[TextBlock(text="ok")], model="sonnet")
-            yield ResultMessage(subtype="result", duration_ms=100, duration_api_ms=80, is_error=False, num_turns=1, session_id="default")
-
-        client.receive_response = fake_response
         event = self._event(content=f"{BOT_MENTION} hello", chat_type="group")
         event["chat_id"] = "oc_group_456"
-        run_async(handle_message(client, event))
+        run_async(handle_message(pool, event))
 
+        pool.get.assert_called_once_with(f"group_oc_group_456_{OWNER_ID}")
         _, kwargs = client.query.call_args
-        assert kwargs["session_id"] == "group_oc_group_456_" + OWNER_ID
-
-    @patch("src.handler.reply_message")
-    @patch("src.handler.remove_reaction")
-    @patch("src.handler.add_reaction", return_value="r_abc")
-    def test_group_without_chat_id_falls_back(self, mock_add, mock_remove, mock_reply):
-        client = MagicMock()
-        client.query = AsyncMock()
-
-        async def fake_response():
-            yield AssistantMessage(content=[TextBlock(text="ok")], model="sonnet")
-            yield ResultMessage(subtype="result", duration_ms=100, duration_api_ms=80, is_error=False, num_turns=1, session_id="default")
-
-        client.receive_response = fake_response
-        run_async(handle_message(client, self._event(chat_type="group")))
-
-        _, kwargs = client.query.call_args
-        assert kwargs["session_id"] == "group_unknown_" + OWNER_ID
+        assert kwargs["session_id"] == f"group_oc_group_456_{OWNER_ID}"
 
     @patch("src.handler.reply_message")
     @patch("src.handler.add_reaction")
     def test_skips_empty_content(self, mock_add, mock_reply):
-        client = MagicMock()
-        run_async(handle_message(client, self._event(content="")))
-        client.query.assert_not_called()
+        pool = MagicMock(spec=ClientPool)
+        run_async(handle_message(pool, self._event(content="")))
+        pool.get.assert_not_called()
 
     @patch("src.handler.reply_message")
     @patch("src.handler.remove_reaction")
     @patch("src.handler.add_reaction", return_value=None)
     def test_replies_error_on_failure(self, mock_add, mock_remove, mock_reply):
-        client = MagicMock()
-        client.query = AsyncMock()
+        messages = [
+            ResultMessage(subtype="result", duration_ms=100, duration_api_ms=80, is_error=True, num_turns=0, session_id="x"),
+        ]
+        pool, client = _make_mock_pool(messages)
 
-        async def fake_error():
-            yield ResultMessage(subtype="result", duration_ms=100, duration_api_ms=80, is_error=True, num_turns=0, session_id="default")
-
-        client.receive_response = fake_error
-        run_async(handle_message(client, self._event()))
+        run_async(handle_message(pool, self._event()))
         mock_reply.assert_called_once_with("om_test", "抱歉，处理时出了点问题。")
         mock_remove.assert_not_called()
 
@@ -164,16 +159,59 @@ class TestHandleMessage:
     @patch("src.handler.remove_reaction")
     @patch("src.handler.add_reaction", return_value="r_abc")
     def test_cleans_at_mention_from_prompt(self, mock_add, mock_remove, mock_reply):
-        client = MagicMock()
-        client.query = AsyncMock()
+        messages = [
+            AssistantMessage(content=[TextBlock(text="ok")], model="sonnet"),
+            ResultMessage(subtype="result", duration_ms=100, duration_api_ms=80, is_error=False, num_turns=1, session_id="x"),
+        ]
+        pool, client = _make_mock_pool(messages)
 
-        async def fake_response():
-            yield AssistantMessage(content=[TextBlock(text="ok")], model="sonnet")
-            yield ResultMessage(subtype="result", duration_ms=100, duration_api_ms=80, is_error=False, num_turns=1, session_id="default")
-
-        client.receive_response = fake_response
-        run_async(handle_message(client, self._event(content=f"{BOT_MENTION} 帮我查一下", chat_type="group")))
+        run_async(handle_message(pool, self._event(content=f"{BOT_MENTION} 帮我查一下", chat_type="group")))
 
         prompt = client.query.call_args[0][0]
         assert BOT_MENTION not in prompt
         assert "帮我查一下" in prompt
+
+    @patch("src.handler.reply_message")
+    @patch("src.handler.remove_reaction")
+    @patch("src.handler.add_reaction", return_value="r_abc")
+    def test_concurrent_sessions_get_different_clients(self, mock_add, mock_remove, mock_reply):
+        """两个并发 session 从 pool 获取不同 client"""
+        messages_a = [
+            AssistantMessage(content=[TextBlock(text="reply_A")], model="sonnet"),
+            ResultMessage(subtype="result", duration_ms=100, duration_api_ms=80, is_error=False, num_turns=1, session_id="x"),
+        ]
+        messages_b = [
+            AssistantMessage(content=[TextBlock(text="reply_B")], model="sonnet"),
+            ResultMessage(subtype="result", duration_ms=100, duration_api_ms=80, is_error=False, num_turns=1, session_id="x"),
+        ]
+
+        client_a = MagicMock()
+        client_a.query = AsyncMock()
+        async def recv_a():
+            for m in messages_a: yield m
+        client_a.receive_response = recv_a
+
+        client_b = MagicMock()
+        client_b.query = AsyncMock()
+        async def recv_b():
+            for m in messages_b: yield m
+        client_b.receive_response = recv_b
+
+        clients = {"p2p_" + OWNER_ID: client_a, "p2p_ou_other": client_b}
+        pool = MagicMock(spec=ClientPool)
+        pool.get = AsyncMock(side_effect=lambda sid: clients[sid])
+
+        async def run():
+            event_a = {"content": "hello_a", "message_id": "om_a", "sender_id": OWNER_ID, "chat_type": "p2p"}
+            event_b = {"content": "hello_b", "message_id": "om_b", "sender_id": "ou_other", "chat_type": "p2p"}
+            await asyncio.gather(
+                handle_message(pool, event_a),
+                handle_message(pool, event_b),
+            )
+
+        run_async(run())
+
+        calls = mock_reply.call_args_list
+        reply_map = {c[0][0]: c[0][1] for c in calls}
+        assert reply_map.get("om_a") == "reply_A"
+        assert reply_map.get("om_b") == "reply_B"

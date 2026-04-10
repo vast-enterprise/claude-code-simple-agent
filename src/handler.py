@@ -1,11 +1,11 @@
 """消息过滤与处理"""
 
-from claude_agent_sdk import ClaudeSDKClient
 from claude_agent_sdk.types import AssistantMessage, ResultMessage, TextBlock
 
 import src.permissions as permissions
-from src.config import OWNER_ID, BOT_NAME
+from src.config import OWNER_ID, BOT_NAME, log_debug
 from src.lark import add_reaction, remove_reaction, reply_message
+from src.pool import ClientPool
 
 BOT_MENTION = f"@{BOT_NAME}"
 
@@ -38,8 +38,8 @@ def should_respond(event: dict) -> bool:
     return False
 
 
-async def handle_message(client: ClaudeSDKClient, event: dict):
-    """处理单条飞书消息"""
+async def handle_message(pool: ClientPool, event: dict):
+    """处理单条飞书消息，从 pool 获取独立 client 实现会话隔离"""
     content = event.get("content", "").strip()
     message_id = event.get("message_id", "")
     sender_id = event.get("sender_id", "")
@@ -56,24 +56,31 @@ async def handle_message(client: ClaudeSDKClient, event: dict):
     prompt = f"[{sender_label}] 在{'群聊' if chat_type == 'group' else '私聊'}中说：{content}"
 
     session_id = compute_session_id(event)
+    client = await pool.get(session_id)
+
     await client.query(prompt, session_id=session_id)
 
-    # 收集回复，首条消息到达时打表情表示"正在处理"
+    # 从该 client 的独立 stream 收集回复
     reply_text = ""
     reaction_id = None
+    claude_session_logged = False
     async for msg in client.receive_response():
         if isinstance(msg, AssistantMessage):
+            if not claude_session_logged and msg.session_id:
+                log_debug(f"[{session_id}] claude session: {msg.session_id}")
+                claude_session_logged = True
             if reaction_id is None:
                 reaction_id = add_reaction(message_id)
             for block in msg.content:
                 if isinstance(block, TextBlock):
                     reply_text += block.text
         elif isinstance(msg, ResultMessage):
+            if not claude_session_logged and msg.session_id:
+                log_debug(f"[{session_id}] claude session: {msg.session_id}")
             if msg.is_error and not reply_text:
                 reply_text = "抱歉，处理时出了点问题。"
             break
 
-    # 处理完成，移除"正在处理"表情
     if reaction_id:
         remove_reaction(message_id, reaction_id)
 

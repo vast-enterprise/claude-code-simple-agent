@@ -1,6 +1,7 @@
 """lark 模块测试"""
 
 import json
+import logging
 from unittest.mock import MagicMock, patch
 
 from src.lark import add_reaction, remove_reaction, reply_message
@@ -26,11 +27,11 @@ class TestReplyMessage:
         assert "截断" in content["text"]
 
     @patch("src.lark.subprocess.run")
-    def test_logs_failure(self, mock_run, capsys):
+    def test_logs_failure(self, mock_run, caplog):
         mock_run.return_value = MagicMock(returncode=1, stderr="API error")
-        reply_message("om_123", "hello")
-        captured = capsys.readouterr()
-        assert "回复消息失败" in captured.err
+        with caplog.at_level(logging.ERROR, logger="avatar"):
+            reply_message("om_123", "hello")
+        assert "回复消息失败" in caplog.text
 
 
 class TestAddReaction:
@@ -50,8 +51,8 @@ class TestAddReaction:
 
 class TestRemoveReaction:
     @patch("src.lark.subprocess.run")
-    def test_logs_failure(self, mock_run, capsys):
+    def test_logs_failure(self, mock_run, caplog):
         mock_run.return_value = MagicMock(returncode=1, stderr="not found")
-        remove_reaction("om_123", "r_abc")
-        captured = capsys.readouterr()
-        assert "移除表情失败" in captured.err
+        with caplog.at_level(logging.ERROR, logger="avatar"):
+            remove_reaction("om_123", "r_abc")
+        assert "移除表情失败" in caplog.text

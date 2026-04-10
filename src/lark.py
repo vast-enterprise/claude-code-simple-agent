@@ -2,7 +2,8 @@
 
 import json
 import subprocess
-import sys
+
+from src.config import log_error
 
 
 def add_reaction(message_id: str, emoji_type: str = "OnIt") -> str | None:
@@ -36,7 +37,7 @@ def remove_reaction(message_id: str, reaction_id: str):
         capture_output=True, text=True, timeout=10,
     )
     if result.returncode != 0:
-        print(f"[Avatar] 移除表情失败: {result.stderr[:200]}", file=sys.stderr)
+        log_error(f"移除表情失败: {result.stderr[:200]}")
 
 
 def reply_message(message_id: str, text: str):
@@ -54,4 +55,4 @@ def reply_message(message_id: str, text: str):
         capture_output=True, text=True, timeout=15,
     )
     if result.returncode != 0:
-        print(f"[Avatar] 回复消息失败: {result.stderr[:200]}", file=sys.stderr)
+        log_error(f"回复消息失败: {result.stderr[:200]}")

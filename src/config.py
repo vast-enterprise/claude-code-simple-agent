@@ -1,8 +1,32 @@
 """配置加载与校验"""
 
 import json
+import logging
+import os
 import sys
 from pathlib import Path
+
+# 日志配置：AVATAR_DEBUG=1 开启详细日志
+_logger = logging.getLogger("avatar")
+if os.environ.get("AVATAR_DEBUG"):
+    _logger.setLevel(logging.DEBUG)
+else:
+    _logger.setLevel(logging.INFO)
+_handler = logging.StreamHandler(sys.stdout)
+_handler.setFormatter(logging.Formatter("[%(name)s] %(message)s"))
+_logger.addHandler(_handler)
+
+
+def log_debug(msg: str, *args, **kwargs):
+    _logger.debug(msg, *args, **kwargs)
+
+
+def log_info(msg: str, *args, **kwargs):
+    _logger.info(msg, *args, **kwargs)
+
+
+def log_error(msg: str, *args, **kwargs):
+    _logger.error(msg, *args, **kwargs)
 
 # 项目根目录（tripo-work-center/）
 ROOT = Path(__file__).resolve().parent.parent
