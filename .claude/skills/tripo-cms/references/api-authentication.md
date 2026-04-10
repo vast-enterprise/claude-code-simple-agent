@@ -24,8 +24,8 @@ Authorization: users API-Key <your-api-key>
 
 | 环境 | 邮箱 | 角色 |
 |------|------|------|
-| staging | `aibot@tripo3d.ai` | admin |
-| production | `aibot@tripo3d.ai` | admin |
+| staging | `aibot@tripo3d.ai` | editor |
+| production | `aibot@tripo3d.ai` | editor |
 
 ### API Key 配置
 

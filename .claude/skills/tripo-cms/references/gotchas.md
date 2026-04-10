@@ -11,6 +11,11 @@
 - **`locale=all`**：返回 locale 对象结构（如 `{"en": "title", "zh": "标题"}`），不是扁平字段
 - **查询包含草稿**：需认证 + `?draft=true` 参数，否则只返回已发布文档
 
+## Skill 账户权限
+
+- **aibot 是 editor 角色**：不是 admin，无法执行 migrate-post、data-backfill 等 admin+ 端点
+- 需要 admin 操作时，必须请用户手动在 Admin Panel 执行或临时提权
+
 ## Tripo CMS 特有
 
 - **GeoPosts slug 允许 `/`**（如 `explore/topic`），Posts slug 不允许
