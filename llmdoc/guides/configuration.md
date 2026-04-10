@@ -8,7 +8,7 @@
 2. 编辑 `config.json`，填写所有字段（字段说明见下方）。
 3. 确认 `config.json` 已被 `.gitignore` 排除（已默认配置），绝不提交到版本控制。
 
-加载逻辑见 `src/config.py:10-15` — 文件不存在时 `exit(1)` 并提示。
+加载逻辑见 `src/config.py:34-37` — 文件不存在时 `exit(1)` 并提示。
 
 ## 2. config.json 字段说明
 
@@ -25,7 +25,7 @@
 
 `config.json` 的 `env` 字段中的键值对会在运行时注入 Claude SDK 子进程。空字符串的键会被过滤掉。
 
-过滤逻辑见 `src/main.py:35`。
+过滤逻辑见 `src/main.py:58`。
 
 | 变量 | 用途 |
 |------|------|
@@ -38,7 +38,7 @@
 
 ## 4. 修改 persona.md
 
-`persona.md` 定义数字分身的人格、语气、能力边界和权限规则。运行时由 `src/config.py:16` 读取为纯文本，通过 `SystemPromptPreset(append=PERSONA)` 注入 Claude SDK 系统提示。
+`persona.md` 定义数字分身的人格、语气、能力边界和权限规则。运行时由 `src/config.py:40` 读取为纯文本，通过 `SystemPromptPreset(append=PERSONA + HEADLESS_RULES)` 注入 Claude SDK 系统提示。
 
 修改步骤：
 1. 编辑项目根目录的 `persona.md`。
@@ -53,18 +53,34 @@
 3. 配置事件订阅：订阅 `im.message.receive_v1` 事件。
 4. 确保 `lark-cli` 已安装并完成 bot 身份认证（`lark-cli auth`）。
 
-事件监听启动见 `src/main.py:18-27` — 通过 `lark-cli event +subscribe` 子进程实现。
+事件监听启动见 `src/main.py:22-31` — 通过 `lark-cli event +subscribe` 子进程实现。
 
-## 6. 启动服务
+## 6. 日志级别配置
+
+项目使用 `logging.getLogger("avatar")` 统一日志系统，替代 `print(stderr)`。
+
+| 环境变量 | 值 | 效果 | 配置位置 |
+|----------|-----|------|----------|
+| `AVATAR_DEBUG` | `1`（或任意非空值） | 开启 DEBUG 级别日志（含 Claude session ID、client 创建等） | `src/config.py:11-14` |
+| 未设置 | — | 默认 INFO 级别 | `src/config.py:13-14` |
+
+统一日志函数：`log_debug()`、`log_info()`、`log_error()`，均定义于 `src/config.py:20-29`，各模块通过 `from src.config import log_*` 使用。
+
+```bash
+# 启用详细日志
+AVATAR_DEBUG=1 python3 src/main.py
+```
+
+## 7. 启动服务
 
 ```bash
 cd /Users/macbookair/Desktop/projects/tripo-work-center
 python3 src/main.py
 ```
 
-启动后会输出所有者、工作目录、模型信息，然后进入飞书事件监听循环。`Ctrl+C` 或 `SIGTERM` 触发清理退出。
+启动后会输出所有者、工作目录、模型信息，然后进入飞书事件监听循环。`Ctrl+C` 或 `SIGTERM` 触发优雅关闭（asyncio-native 信号处理）。
 
-## 7. 密钥安全
+## 8. 密钥安全
 
 `.gitignore` 已排除 `config.json`，规则见 `.gitignore:2`。
 

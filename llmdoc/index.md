@@ -18,7 +18,7 @@
 ### architecture/
 | 文档 | 说明 |
 |------|------|
-| [event-pipeline.md](architecture/event-pipeline.md) | 事件驱动管道、双子进程模型、进程生命周期 |
+| [event-pipeline.md](architecture/event-pipeline.md) | 事件驱动管道、多进程池模型（ClientPool）、进程生命周期 |
 | [lark-interaction.md](architecture/lark-interaction.md) | 飞书交互层：消息回复、表情反馈、事件订阅 |
 | [permission-model.md](architecture/permission-model.md) | 双层权限模型：代码强制 + prompt 约束 |
 | [persona-system.md](architecture/persona-system.md) | 人格注入机制、边界规则、OKR |

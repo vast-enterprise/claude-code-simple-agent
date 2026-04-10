@@ -9,7 +9,7 @@
 
 - `src/permissions.py` (`permission_gate`, `set_sender`, `get_sender`, `_current_sender_id`, `SENSITIVE`): 运行时权限门控，唯一的代码强制执行点。`_current_sender_id` 为 `contextvars.ContextVar`，支持并发隔离。
 - `src/handler.py` (`handle_message`, `compute_session_id`): 调用 `permissions.set_sender(sender_id)` 写入 contextvars，构造带 `[所有者]`/`[同事]` 角色标签的 prompt。
-- `src/main.py` (`main`): 注册 `permission_gate` 为 `ClaudeAgentOptions.can_use_tool` 回调，设置 `permission_mode="bypassPermissions"`；通过 `disallowed_tools` 硬拦截交互式工具；拼接 `HEADLESS_RULES` 到 system prompt。
+- `src/main.py` (`main`): 构造 `ClaudeAgentOptions`（含 `permission_gate` 为 `can_use_tool` 回调、`permission_mode="bypassPermissions"`、`disallowed_tools`），传入 `ClientPool(options)`。Pool 为每个 session 惰性创建 client 时使用相同的 options。
 - `src/config.py` (`OWNER_ID`, `HEADLESS_RULES`, `DISALLOWED_TOOLS`): 从 `config.json` 的 `owner_open_id` 字段加载所有者身份；`HEADLESS_RULES` 定义 headless 模式运行约束；`DISALLOWED_TOOLS` 硬编码禁用交互式工具（AskUserQuestion、ExitPlanMode、EnterPlanMode）。
 - `persona.md` (权限规则章节): prompt 层权限定义——所有者全权，同事只读+非敏感。
 - `CLAUDE.md` (行为约束表): prompt 层行为约束——禁止 merge、状态变更需确认、通知后阻塞等。
@@ -24,7 +24,7 @@
 ### 第二层：Prompt 约束（行为引导）
 
 - **1. persona.md 注入:** `src/main.py` 通过 `SystemPromptPreset(append=PERSONA + HEADLESS_RULES)` 将人格文本和运行环境约束注入 system prompt。
-- **2. CLAUDE.md 加载:** Claude SDK 以 `setting_sources=["user", "project"]` 运行，自动读取用户级和项目级 settings，加载 skills/plugins/mcp。
+- **2. CLAUDE.md 加载:** 每个 per-session `ClaudeSDKClient` 以 `setting_sources=["user", "project"]` 运行，自动读取用户级和项目级 settings，加载 skills/plugins/mcp。
 
 ### 已验证不生效的机制（bypassPermissions 限制）
 

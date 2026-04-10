@@ -12,10 +12,12 @@ src/
 │   ├── __init__.py
 │   ├── handler.py      ← 测试 src/handler.py
 │   ├── lark.py          ← 测试 src/lark.py
-│   └── permissions.py   ← 测试 src/permissions.py
+│   ├── permissions.py   ← 测试 src/permissions.py
+│   └── pool.py          ← 测试 src/pool.py
 ├── handler.py
 ├── lark.py
 ├── permissions.py
+├── pool.py
 ├── config.py
 └── main.py
 ```
@@ -38,13 +40,17 @@ python3 -m pytest -v
 
 ## 4. Mock 策略
 
-三种模式，按被测模块选用：
+四种模式，按被测模块选用：
 
-1. **subprocess mock**（用于 `lark.py`）：`@patch("src.lark.subprocess.run")` 拦截子进程调用，通过 `MagicMock(returncode=..., stdout=..., stderr=...)` 控制返回值。参考 `src/__tests__/lark.py:10-17`。
+1. **subprocess mock**（用于 `lark.py`）：`@patch("src.lark.subprocess.run")` 拦截子进程调用，通过 `MagicMock(returncode=..., stdout=..., stderr=...)` 控制返回值。参考 `src/__tests__/lark.py:11-18`。
 
-2. **AsyncMock + async generator**（用于 `handler.py`）：`client.query` 用 `AsyncMock()`；`client.receive_response` 赋值为返回 async generator 的普通 async 函数（不能用 `AsyncMock`，因为 `async for` 需要真实的 async iterable）。lark 函数通过 `@patch("src.handler.*")` 拦截（patch 目标是 handler 命名空间，非 lark 模块本身）。参考 `src/__tests__/handler.py:50-67`。
+2. **pool mock + AsyncMock + async generator**（用于 `handler.py`）：通过 `_make_mock_pool(messages)` 工厂函数构造 mock pool（`src/__tests__/handler.py:61-74`）——`pool.get = AsyncMock(return_value=client)`，`client.query = AsyncMock()`，`client.receive_response` 赋值为返回 async generator 的真实 `async def` 函数（不能用 `AsyncMock`，因为 `async for` 需要真实的 async iterable）。lark 函数通过 `@patch("src.handler.*")` 拦截。
 
-3. **全局变量直写**（用于 `permissions.py`）：直接操作 `permissions._current_sender_id` 模拟不同发送者身份。`ctx` 通过 `pytest.fixture(autouse=True)` 注入为 `MagicMock()`，仅满足函数签名。参考 `src/__tests__/permissions.py:17-24`。
+3. **全局变量直写**（用于 `permissions.py`）：直接操作 `permissions._current_sender_id` 模拟不同发送者身份。`ctx` 通过 `pytest.fixture(autouse=True)` 注入为 `MagicMock()`，仅满足函数签名。
+
+4. **ClaudeSDKClient mock**（用于 `pool.py`）：`@patch("src.pool.ClaudeSDKClient")` 拦截 client 构造，`mock_instance.connect = AsyncMock()` 控制连接行为。参考 `src/__tests__/pool.py:21-34`。
+
+**日志断言迁移：** `lark.py` 和 `session.py` 已从 `print(stderr)` 迁移到 `logging.getLogger("avatar")`，测试中使用 `caplog.at_level(logging.ERROR, logger="avatar")` 断言日志内容（替代 `capsys.readouterr().err`）。参考 `src/__tests__/lark.py:30-34`。
 
 ## 5. async 测试辅助
 
@@ -55,7 +61,7 @@ def run_async(coro):
     return asyncio.run(coro)
 ```
 
-`handler.py` 和 `permissions.py` 的测试文件中各自定义了相同的 `run_async`。
+`handler.py`、`permissions.py` 和 `pool.py` 的测试文件中各自定义了相同的 `run_async`。
 
 ## 6. 命名规范
 
@@ -68,12 +74,13 @@ def run_async(coro):
 | 模块 | 用例数 | 覆盖情况 |
 |------|--------|----------|
 | `lark.py` | 6 | `reply_message`(3) `add_reaction`(2) `remove_reaction`(1) |
-| `handler.py` | 11 | `should_respond`(7) `handle_message`(4) |
+| `handler.py` | 12 | `should_respond`(7) `compute_session_id`(5) `handle_message`(7，含并发 session 测试) |
 | `permissions.py` | 5+4 parametrize | `permission_gate` 全部 4 个逻辑分支 |
+| `pool.py` | 5 | `get` 创建+连接(1) 复用(1) 不同 session 独立(1) `shutdown`(1) 并发去重(1) |
 
 已知空白点：
 
 - **`config.py`** — 无测试（模块导入时立即执行，`config.json` 缺失直接 `sys.exit(1)`）
 - **`main.py`** — 无测试（入口脚本、事件循环、子进程生命周期管理）
 - **`lark.py`** — `add_reaction` 的 `JSONDecodeError`/`KeyError` 异常路径未覆盖
-- **`handler.py`** — `reaction_id` 为 None 时不调用 `remove_reaction` 的路径未显式断言
+- **`pool.py`** — `connect()` 失败后的 `disconnect()` + re-raise 路径未覆盖

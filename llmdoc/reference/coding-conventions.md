@@ -8,7 +8,7 @@
 
 ## 2. 模块组织
 
-- 源码位于 `src/`，每个模块一个文件，职责单一（config / lark / permissions / handler / main）
+- 源码位于 `src/`，每个模块一个文件，职责单一（config / lark / permissions / handler / pool / session / main）
 - 测试位于 `src/__tests__/`，与 `src/` 同级 colocated，文件名与被测模块一致
 - `src/__init__.py` 和 `src/__tests__/__init__.py` 均为空包标记文件
 - 配置：`pyproject.toml` (`[tool.pytest.ini_options]`) — `testpaths = ["src/__tests__"]`, `pythonpath = ["."]`
@@ -32,13 +32,14 @@
 - 测试中不使用 `pytest-asyncio`，统一通过同步辅助函数包装：`run_async(coro) = asyncio.run(coro)`
 - Mock async 方法：`client.query = AsyncMock()`；mock async generator：定义真实 `async def` 函数并赋值给 `client.receive_response`
 
-## 5. 错误处理模式
+## 5. 错误处理与日志模式
 
-- subprocess 调用失败：检查 `returncode != 0`，打印 stderr 前 200 字符到 `sys.stderr`，不抛异常
-- 日志前缀统一为 `[Avatar]`，格式：`[Avatar] 操作失败: {stderr[:200]}`
+- 项目使用 `logging.getLogger("avatar")` 统一日志系统，通过 `log_debug()`、`log_info()`、`log_error()` 函数输出（`src/config.py:20-29`）
+- `AVATAR_DEBUG=1` 环境变量开启 DEBUG 级别，默认 INFO
+- subprocess 调用失败：检查 `returncode != 0`，通过 `log_error()` 记录 stderr 前 200 字符，不抛异常
 - 返回值降级：失败时返回 `None`（如 `add_reaction`）或静默跳过（如 `remove_reaction`）
 - 配置缺失：`config.json` 不存在时 `sys.exit(1)`，硬退出
-- 消息处理异常：`main.py` 中 `try/except Exception` 捕获并打印，不中断事件循环
+- 消息处理异常：session worker 中 `try/except Exception` 捕获并 `log_error()`，不中断事件循环
 
 ## 6. 导入规范
 
@@ -57,7 +58,8 @@
 
 - **模块结构**: `pyproject.toml:10-15` — pytest 配置与路径定义
 - **lark-cli 调用**: `src/lark.py` (`add_reaction`, `remove_reaction`, `reply_message`) — 全部 subprocess + `--as bot`
-- **错误处理**: `src/lark.py:38-39`, `src/lark.py:56-57` — stderr 日志模式
-- **异步入口**: `src/main.py:120-121` — `asyncio.run(main())`
-- **测试 async 包装**: `src/__tests__/handler.py:14-15`, `src/__tests__/permissions.py:13-14` — `run_async` 辅助函数
+- **日志系统**: `src/config.py:9-29` — `logging.getLogger("avatar")` + `log_debug/log_info/log_error`
+- **错误处理**: `src/lark.py:40`, `src/lark.py:58` — `log_error()` 日志模式
+- **异步入口**: `src/main.py:133-134` — `asyncio.run(main())`
+- **测试 async 包装**: `src/__tests__/handler.py:15-16`, `src/__tests__/pool.py:11-12` — `run_async` 辅助函数
 - **导入风格**: `src/handler.py:1-8` — 三段式导入示例

@@ -16,10 +16,10 @@
 ## 3. Execution Flow (LLM Retrieval Map)
 
 - **1. 配置加载:** `src/config.py` 在进程启动时读取 `persona.md` 文本内容，存入 `PERSONA` 常量。
-- **2. SDK 初始化:** `src/main.py` 构造 `ClaudeAgentOptions`，设置 `system_prompt=SystemPromptPreset(append=PERSONA + HEADLESS_RULES)`，`disallowed_tools=["AskUserQuestion", "ExitPlanMode", "EnterPlanMode"]`，`setting_sources=["project"]`，`permission_mode="bypassPermissions"`，`can_use_tool=permission_gate`。
+- **2. SDK 初始化:** `src/main.py:60-74` 构造 `ClaudeAgentOptions`，设置 `system_prompt=SystemPromptPreset(append=PERSONA + HEADLESS_RULES)`，`disallowed_tools=["AskUserQuestion", "ExitPlanMode", "EnterPlanMode"]`，`setting_sources=["user", "project"]`，`permission_mode="bypassPermissions"`，`can_use_tool=permission_gate`。options 传入 `ClientPool(options)`，pool 为每个 session 惰性创建 client。
 - **3. CLAUDE.md 加载:** Claude SDK 启动时自动扫描 `cwd`（即 `tripo-work-center`）下的 `.claude/` 目录，将 `CLAUDE.md` 作为项目级指令注入会话。
 - **4. 人格注入:** `persona.md` 的文本通过 `append` 模式追加到 system prompt——与 `CLAUDE.md` 注入的差异在于：`CLAUDE.md` 是默认加载的项目配置，`persona.md` 是人格层追加。
-- **5. 消息处理:** `src/handler.py:54-60` 在 prompt 中添加 `[所有者]` 或 `[同事]` 标签后发送给 SDK。
+- **5. 消息处理:** `src/handler.py:53-61` 在 prompt 中添加 `[所有者]` 或 `[同事]` 标签，从 `pool.get(session_id)` 获取独立 client 后发送给 SDK。
 - **6. 边界规则执行:** 分为两层——prompt 层（`persona.md` 中的能力边界通过人格描述约束 LLM 行为）和代码层（`src/permissions.py:permission_gate` 在每次 Bash 工具调用前拦截非所有者的敏感命令）。
 
 ## 4. 关键设计决策

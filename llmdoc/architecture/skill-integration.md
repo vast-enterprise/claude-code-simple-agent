@@ -9,23 +9,23 @@
 
 - `CLAUDE.md` (`Skills 目录`): 项目级指令文件，声明 7 个 skill 的名称与用途，是 Claude Code 发现 skill 的入口索引。
 - `.claude/skills/*/SKILL.md` (各 skill 的 `name`, `description`, 触发条件): 每个 skill 的元数据与流程定义，Claude Code 通过 frontmatter 中的 `description` 字段理解 skill 的适用场景。
-- `src/main.py:37-47` (`ClaudeAgentOptions`): 数字分身初始化 SDK 客户端时的关键配置，`setting_sources=["project"]` 和 `cwd=ROOT` 决定了 skill 加载行为。
+- `src/main.py:60-74` (`ClaudeAgentOptions`): 数字分身初始化 SDK 选项时的关键配置，传入 `ClientPool(options)` 后由 pool 为每个 session 惰性创建 client。`setting_sources=["user", "project"]` 和 `cwd=ROOT` 决定了 skill 加载行为。
 - `src/config.py` (`ROOT`): 解析项目根目录路径，作为 `cwd` 传入 SDK，使 skill 发现路径锚定到 `tripo-work-center`。
 
 ## 3. Execution Flow (LLM Retrieval Map)
 
 ### 3.1 Skill 加载机制
 
-- **1. SDK 初始化:** `src/main.py:44` 设置 `setting_sources=["project"]`，指示 Claude Code 仅从项目级配置加载（不加载全局 `~/.claude/` 下的 skill）。
-- **2. cwd 锚定:** `src/main.py:38` 设置 `cwd=str(ROOT)`，ROOT 指向 `tripo-work-center` 项目根目录。
+- **1. SDK 初始化:** `src/main.py:71` 设置 `setting_sources=["user", "project"]`，指示 Claude Code 从用户级和项目级配置加载。
+- **2. cwd 锚定:** `src/main.py:61` 设置 `cwd=str(ROOT)`，ROOT 指向 `tripo-work-center` 项目根目录。
 - **3. 自动发现:** Claude Code 根据 cwd 读取 `CLAUDE.md`（项目指令）和 `.claude/skills/` 目录下所有 `SKILL.md` 文件。
 - **4. 结果:** 6 个已实现的 skill（tripo-requirement、tripo-tables、tripo-repos、tripo-worktree、tripo-task-dirs、tripo-release）被注入会话上下文。
 
 ### 3.2 数字分身复用 Skill 体系
 
-- **1. 同一 cwd:** 数字分身的 `ClaudeSDKClient` 与 CLI 会话使用相同的 `cwd`（`tripo-work-center`），因此自动发现相同的 skill 集合。
+- **1. 同一 cwd:** 数字分身的每个 per-session `ClaudeSDKClient`（由 `ClientPool` 管理）与 CLI 会话使用相同的 `cwd`（`tripo-work-center`），因此自动发现相同的 skill 集合。
 - **2. 同一 CLAUDE.md:** 行为约束（提议+确认、禁止 merge、通知后阻塞等）对数字分身同样生效，因为它们定义在项目级 `CLAUDE.md` 中。
-- **3. 零额外配置:** 不需要为数字分身单独注册或复制 skill 文件，`setting_sources=["project"]` + `cwd` 即完成全部 skill 注入。
+- **3. 零额外配置:** 不需要为数字分身单独注册或复制 skill 文件，`setting_sources=["user", "project"]` + `cwd` 即完成全部 skill 注入。每个 session 的 client 使用相同的 `ClaudeAgentOptions`，skill 集合一致。
 
 ### 3.3 Skill 路由（Claude 自主选择）
 
@@ -55,4 +55,4 @@ Skill 作为 Claude Code 的上下文注入，本质是"结构化 prompt"。纯 
 **数字分身场景的限制：**
 - Skill 无法主动触发——必须等待用户消息到达后，由 Claude 推理决定是否调用。
 - 路由准确性完全依赖 Claude 的语义理解，无 fallback 机制；模糊消息可能导致错误路由或不路由。
-- `setting_sources=["project"]` 排除了全局 skill（如 `~/.claude/skills/` 下的 lark-*、seo-* 等），数字分身无法使用这些 skill。
+- `setting_sources=["user", "project"]` 加载用户级和项目级配置，数字分身可使用全局和项目级 skill。

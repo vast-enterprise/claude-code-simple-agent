@@ -22,7 +22,7 @@
 - **封装子命令**: `lark-cli im reactions create --params {...} --data {...} --as bot` — 用于表情操作。见 `src/lark.py:12-18`、`src/lark.py:31-37`。
 - **原始 API 调用**: `lark-cli api POST /open-apis/im/v1/messages/{id}/reply --data {...} --as bot --format data` — 用于消息回复。见 `src/lark.py:48-53`。
 
-错误处理策略：失败时打印 stderr 到日志，不抛异常（静默降级）。
+错误处理策略：失败时通过 `log_error()` 记录日志，不抛异常（静默降级）。
 
 ### 3.2 消息回复机制
 
@@ -35,14 +35,14 @@
 
 表情用作"正在处理"的视觉状态指示器，生命周期与单次消息处理绑定：
 
-1. **添加时机**: `handle_message` 异步迭代 SDK 响应流，首条 `AssistantMessage` 到达时调用 `add_reaction(message_id)`，默认 emoji 为 `"OnIt"`。见 `src/handler.py:53-55`。
-2. **返回值**: `add_reaction` 返回 `reaction_id: str | None`，供后续删除使用。见 `src/lark.py:8-25`。
-3. **移除时机**: 响应流消费完毕（收到 `ResultMessage`）后，立即调用 `remove_reaction(message_id, reaction_id)` 清理。见 `src/handler.py:65-66`。
+1. **添加时机**: `handle_message` 异步迭代 SDK 响应流，首条 `AssistantMessage` 到达时调用 `add_reaction(message_id)`，默认 emoji 为 `"OnIt"`。见 `src/handler.py:72-73`。
+2. **返回值**: `add_reaction` 返回 `reaction_id: str | None`，供后续删除使用。见 `src/lark.py:9-26`。
+3. **移除时机**: 响应流消费完毕（收到 `ResultMessage`）后，立即调用 `remove_reaction(message_id, reaction_id)` 清理。见 `src/handler.py:84-85`。
 4. **容错**: `reaction_id` 为 `None` 时跳过移除；移除失败仅打印日志。
 
 ### 3.4 事件订阅配置
 
-- **入口**: `src/main.py:18-27` (`start_event_listener`)
+- **入口**: `src/main.py:22-31` (`start_event_listener`)
 - **命令**: `lark-cli event +subscribe --event-types im.message.receive_v1 --compact --quiet --as bot`
 - **关键 flag**:
   - `--event-types im.message.receive_v1`: 仅订阅消息接收事件
@@ -56,6 +56,6 @@
 ## 4. Design Rationale
 
 - **为什么用 lark-cli 而非直接 HTTP**: 认证、token 刷新、WebSocket 长连接管理全部由 lark-cli 处理，应用层只需关注业务逻辑。
-- **为什么同步调用**: 当前架构为单进程串行处理，同步 `subprocess.run` 足够且更简单。
+- **为什么同步调用**: lark-cli 调用耗时极短（毫秒级），同步 `subprocess.run` 足够且更简单。在多 session 并发架构下，每个 worker 的短暂阻塞影响有限。
 - **为什么静默降级**: 表情和回复失败不应阻断主流程，避免因飞书 API 抖动导致整个消息处理链中断。
 - **4000 字符截断**: 飞书文本消息 API 的长度限制约束，硬截断是 MVP 阶段的简单方案，后续可改为分段发送或 Markdown 卡片。
