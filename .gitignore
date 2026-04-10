@@ -1,6 +1,9 @@
 .playwright-cli
 config.json
+config.yes.json
+config.vast.json
 __pycache__
 tmp
 .pytest_cache
 .DS_Store
+.env
