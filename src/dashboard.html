@@ -203,10 +203,10 @@ function renderSessions() {
     var rowBg = idx % 2 === 0 ? 'bg-gray-800' : 'bg-gray-800/60';
     return '<tr class="' + rowBg + ' hover:bg-gray-700/50 transition-colors">' +
       '<td class="px-4 py-3">' +
-        '<button onclick="openTimeline(\'' + escapeHtml(id) + '\')" ' +
+        '<a href="/session.html?id=' + encodeURIComponent(id) + '" ' +
           'class="text-purple-400 hover:text-purple-300 hover:underline font-mono text-xs transition-colors">' +
           escapeHtml(id) +
-        '</button>' +
+        '</a>' +
       '</td>' +
       '<td class="px-4 py-3 text-gray-400">' + localTime(s.created_at) + '</td>' +
       '<td class="px-4 py-3 text-gray-400" title="' + localTime(s.last_active) + '">' + relativeTime(s.last_active) + '</td>' +
