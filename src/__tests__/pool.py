@@ -175,6 +175,37 @@ class TestClientPoolFIFO:
         pool = self._make_pool()
         assert pool.dequeue_message("s1") is None
 
+    def test_pending_count(self):
+        pool = self._make_pool()
+        assert pool.pending_count("s1") == 0
+        pool.enqueue_message("s1", "om_1", "a")
+        pool.enqueue_message("s1", "om_2", "b")
+        assert pool.pending_count("s1") == 2
+
+    def test_dequeue_batch(self):
+        pool = self._make_pool()
+        pool.enqueue_message("s1", "om_1", "a")
+        pool.enqueue_message("s1", "om_2", "b")
+        pool.enqueue_message("s1", "om_3", "c")
+
+        batch = pool.dequeue_batch("s1", 2)
+        assert len(batch) == 2
+        assert batch[0]["message_id"] == "om_1"
+        assert batch[1]["message_id"] == "om_2"
+        assert pool.pending_count("s1") == 1
+
+    def test_dequeue_batch_more_than_available(self):
+        pool = self._make_pool()
+        pool.enqueue_message("s1", "om_1", "a")
+        batch = pool.dequeue_batch("s1", 5)
+        assert len(batch) == 1
+        assert pool.pending_count("s1") == 0
+
+    def test_dequeue_batch_empty(self):
+        pool = self._make_pool()
+        batch = pool.dequeue_batch("s1", 3)
+        assert batch == []
+
     def test_get_client_returns_none_when_no_client(self):
         pool = self._make_pool()
         assert pool.get_client("s1") is None

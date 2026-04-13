@@ -161,6 +161,21 @@ class ClientPool:
         q = self._pending.get(session_id)
         return bool(q)
 
+    def pending_count(self, session_id: str) -> int:
+        """当前 FIFO 中的消息数量"""
+        q = self._pending.get(session_id)
+        return len(q) if q else 0
+
+    def dequeue_batch(self, session_id: str, count: int) -> list[dict]:
+        """批量弹出 FIFO 前 count 条。用于 Claude 合并多条消息到一个 turn 时批量 dequeue。"""
+        q = self._pending.get(session_id)
+        if not q:
+            return []
+        batch = []
+        for _ in range(min(count, len(q))):
+            batch.append(q.popleft())
+        return batch
+
     async def shutdown(self):
         """断开所有 client，清空 FIFO"""
         for sid, client in self._clients.items():
