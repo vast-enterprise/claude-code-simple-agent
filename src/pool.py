@@ -87,6 +87,18 @@ class ClientPool:
             return self._store.load_all()
         return {}
 
+    def get_claude_session_id(self, session_id: str) -> str | None:
+        """获取存储的 Claude session_id，用于 resume。无则返回 None（首次创建）。"""
+        if self._store:
+            data = self._store.load_all()
+            return data.get(session_id, {}).get("claude_session_id")
+        return None
+
+    def save_claude_session_id(self, session_id: str, claude_session_id: str) -> None:
+        """保存 Claude 返回的 session_id 到 store，用于重启后 resume。"""
+        if self._store:
+            self._store.save(session_id, {"claude_session_id": claude_session_id})
+
     def session_ids(self) -> set[str]:
         """返回 store 中所有 session_id。无 store 时返回空 set。"""
         if self._store:

@@ -58,7 +58,7 @@ class TestComputeSessionId:
         assert compute_session_id({"sender_id": "ou_abc"}) == "p2p_ou_abc"
 
 
-def _make_mock_pool(messages):
+def _make_mock_pool(messages, claude_session_id=None):
     """构造 mock pool：pool.get() 返回一个 mock client，client.receive_response() 产出 messages"""
     client = MagicMock()
     client.query = AsyncMock()
@@ -71,6 +71,8 @@ def _make_mock_pool(messages):
 
     pool = MagicMock(spec=ClientPool)
     pool.get = AsyncMock(return_value=client)
+    pool.get_claude_session_id = MagicMock(return_value=claude_session_id)
+    pool.save_claude_session_id = MagicMock()
     return pool, client
 
 
@@ -105,7 +107,7 @@ class TestHandleMessage:
     @patch("src.handler.reply_message")
     @patch("src.handler.remove_reaction")
     @patch("src.handler.add_reaction", return_value="r_abc")
-    def test_p2p_uses_sender_id_as_session(self, mock_add, mock_remove, mock_reply):
+    def test_p2p_routes_to_correct_session(self, mock_add, mock_remove, mock_reply):
         messages = [
             AssistantMessage(content=[TextBlock(text="ok")], model="sonnet"),
             ResultMessage(subtype="result", duration_ms=100, duration_api_ms=80, is_error=False, num_turns=1, session_id="x"),
@@ -114,13 +116,42 @@ class TestHandleMessage:
 
         run_async(handle_message(pool, self._event(sender_id="ou_user_123")))
 
-        _, kwargs = client.query.call_args
-        assert kwargs["session_id"] == "p2p_ou_user_123"
+        pool.get.assert_called_once_with("p2p_ou_user_123")
+        pool.get_claude_session_id.assert_called_once_with("p2p_ou_user_123")
 
     @patch("src.handler.reply_message")
     @patch("src.handler.remove_reaction")
     @patch("src.handler.add_reaction", return_value="r_abc")
-    def test_group_uses_chat_id_as_session(self, mock_add, mock_remove, mock_reply):
+    def test_saves_claude_session_id(self, mock_add, mock_remove, mock_reply):
+        messages = [
+            AssistantMessage(content=[TextBlock(text="ok")], model="sonnet", session_id="claude_abc"),
+            ResultMessage(subtype="result", duration_ms=100, duration_api_ms=80, is_error=False, num_turns=1, session_id="claude_abc"),
+        ]
+        pool, client = _make_mock_pool(messages)
+
+        run_async(handle_message(pool, self._event()))
+
+        pool.save_claude_session_id.assert_called_with(f"p2p_{OWNER_ID}", "claude_abc")
+
+    @patch("src.handler.reply_message")
+    @patch("src.handler.remove_reaction")
+    @patch("src.handler.add_reaction", return_value="r_abc")
+    def test_resumes_with_stored_claude_session_id(self, mock_add, mock_remove, mock_reply):
+        messages = [
+            AssistantMessage(content=[TextBlock(text="ok")], model="sonnet"),
+            ResultMessage(subtype="result", duration_ms=100, duration_api_ms=80, is_error=False, num_turns=1, session_id="x"),
+        ]
+        pool, client = _make_mock_pool(messages, claude_session_id="stored_session_123")
+
+        run_async(handle_message(pool, self._event()))
+
+        _, kwargs = client.query.call_args
+        assert kwargs["session_id"] == "stored_session_123"
+
+    @patch("src.handler.reply_message")
+    @patch("src.handler.remove_reaction")
+    @patch("src.handler.add_reaction", return_value="r_abc")
+    def test_group_routes_correctly(self, mock_add, mock_remove, mock_reply):
         messages = [
             AssistantMessage(content=[TextBlock(text="ok")], model="sonnet"),
             ResultMessage(subtype="result", duration_ms=100, duration_api_ms=80, is_error=False, num_turns=1, session_id="x"),
@@ -132,8 +163,6 @@ class TestHandleMessage:
         run_async(handle_message(pool, event))
 
         pool.get.assert_called_once_with(f"group_oc_group_456_{OWNER_ID}")
-        _, kwargs = client.query.call_args
-        assert kwargs["session_id"] == f"group_oc_group_456_{OWNER_ID}"
 
     @patch("src.handler.reply_message")
     @patch("src.handler.add_reaction")
@@ -200,6 +229,8 @@ class TestHandleMessage:
         clients = {"p2p_" + OWNER_ID: client_a, "p2p_ou_other": client_b}
         pool = MagicMock(spec=ClientPool)
         pool.get = AsyncMock(side_effect=lambda sid: clients[sid])
+        pool.get_claude_session_id = MagicMock(return_value=None)
+        pool.save_claude_session_id = MagicMock()
 
         async def run():
             event_a = {"content": "hello_a", "message_id": "om_a", "sender_id": OWNER_ID, "chat_type": "p2p"}
@@ -215,3 +246,82 @@ class TestHandleMessage:
         reply_map = {c[0][0]: c[0][1] for c in calls}
         assert reply_map.get("om_a") == "reply_A"
         assert reply_map.get("om_b") == "reply_B"
+
+
+class TestParseCommand:
+    """parse_command 解析 / 开头的指令"""
+
+    def test_parse_command_clear(self):
+        from src.handler import parse_command
+        assert parse_command("/clear") == "clear"
+
+    def test_parse_command_unknown(self):
+        from src.handler import parse_command
+        assert parse_command("/unknown") is None
+
+    def test_parse_command_normal_message(self):
+        from src.handler import parse_command
+        assert parse_command("hello world") is None
+
+    def test_parse_command_with_args(self):
+        from src.handler import parse_command
+        assert parse_command("/status some args") == "status"
+
+    def test_parse_command_case_insensitive(self):
+        from src.handler import parse_command
+        assert parse_command("/CLEAR") == "clear"
+
+
+class TestHandleCommand:
+    """handle_command 处理指令，直接回复飞书"""
+
+    def _event(self, content="/clear", sender_id=None, chat_type="p2p"):
+        return {
+            "content": content,
+            "message_id": "om_cmd",
+            "sender_id": sender_id or OWNER_ID,
+            "chat_type": chat_type,
+        }
+
+    @patch("src.handler.reply_message")
+    def test_handle_command_clear_removes_session(self, mock_reply):
+        from src.handler import handle_command
+        pool = MagicMock(spec=ClientPool)
+        pool.remove = AsyncMock(return_value=True)
+        metrics = MagicMock()
+
+        run_async(handle_command(pool, metrics, self._event(), "clear"))
+
+        pool.remove.assert_called_once()
+        mock_reply.assert_called_once_with("om_cmd", "已清除当前会话。下次发消息将开始新对话。")
+
+    @patch("src.handler.reply_message")
+    def test_handle_command_clear_no_session(self, mock_reply):
+        from src.handler import handle_command
+        pool = MagicMock(spec=ClientPool)
+        pool.remove = AsyncMock(return_value=False)
+        metrics = MagicMock()
+
+        run_async(handle_command(pool, metrics, self._event(), "clear"))
+
+        mock_reply.assert_called_once_with("om_cmd", "当前没有活跃会话。")
+
+    @patch("src.handler.reply_message")
+    def test_handle_command_sessions_non_owner(self, mock_reply):
+        from src.handler import handle_command
+        pool = MagicMock(spec=ClientPool)
+        metrics = MagicMock()
+
+        run_async(handle_command(pool, metrics, self._event(sender_id="ou_non_owner"), "sessions"))
+
+        mock_reply.assert_called_once_with("om_cmd", "仅所有者可查看 session 列表。")
+
+    @patch("src.handler.reply_message")
+    def test_handle_command_status_non_owner(self, mock_reply):
+        from src.handler import handle_command
+        pool = MagicMock(spec=ClientPool)
+        metrics = MagicMock()
+
+        run_async(handle_command(pool, metrics, self._event(sender_id="ou_non_owner"), "status"))
+
+        mock_reply.assert_called_once_with("om_cmd", "仅所有者可查看系统状态。")

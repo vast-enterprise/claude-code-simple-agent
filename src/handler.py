@@ -1,5 +1,9 @@
 """消息过滤与处理"""
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 from claude_agent_sdk.types import AssistantMessage, ResultMessage, TextBlock
 
 import src.permissions as permissions
@@ -7,7 +11,12 @@ from src.config import OWNER_ID, BOT_NAME, log_debug
 from src.lark import add_reaction, remove_reaction, reply_message
 from src.pool import ClientPool
 
+if TYPE_CHECKING:
+    from src.metrics import MetricsCollector
+
 BOT_MENTION = f"@{BOT_NAME}"
+
+_COMMANDS = frozenset(("clear", "compact", "sessions", "status"))
 
 
 def compute_session_id(event: dict) -> str:
@@ -38,7 +47,68 @@ def should_respond(event: dict) -> bool:
     return False
 
 
-async def handle_message(pool: ClientPool, event: dict):
+def parse_command(content: str) -> str | None:
+    """解析 / 开头的指令，返回指令名或 None"""
+    if not content.startswith("/"):
+        return None
+    cmd = content.split()[0].lstrip("/").lower()
+    if cmd in _COMMANDS:
+        return cmd
+    return None
+
+
+async def handle_command(
+    pool: ClientPool, metrics: MetricsCollector, event: dict, command: str
+) -> None:
+    """处理飞书指令，直接回复，不经过 Claude"""
+    message_id = event.get("message_id", "")
+    sender_id = event.get("sender_id", "")
+    session_id = compute_session_id(event)
+
+    if command == "clear":
+        removed = await pool.remove(session_id)
+        text = "已清除当前会话。下次发消息将开始新对话。" if removed else "当前没有活跃会话。"
+
+    elif command == "compact":
+        # TODO: 调用 Claude SDK compact（当前先返回提示）
+        text = "会话压缩功能开发中。"
+
+    elif command == "sessions":
+        if sender_id != OWNER_ID:
+            text = "仅所有者可查看 session 列表。"
+        else:
+            sessions = pool.list_sessions()
+            if not sessions:
+                text = "当前没有任何 session。"
+            else:
+                lines = [f"共 {len(sessions)} 个 session："]
+                for sid, meta in sessions.items():
+                    count = meta.get("message_count", 0)
+                    last = meta.get("last_active", "未知")[:16]
+                    lines.append(f"• {sid} ({count}条, 最后活跃: {last})")
+                text = "\n".join(lines)
+
+    elif command == "status":
+        if sender_id != OWNER_ID:
+            text = "仅所有者可查看系统状态。"
+        else:
+            s = metrics.status()
+            sessions = pool.list_sessions()
+            text = (
+                f"运行时间: {s['uptime']}\n"
+                f"总消息数: {s['total_messages']}\n"
+                f"错误数: {s['total_errors']} ({s['error_rate']})\n"
+                f"活跃 Session: {len(sessions)}"
+            )
+    else:
+        text = f"未知指令: /{command}"
+
+    reply_message(message_id, text)
+
+
+async def handle_message(
+    pool: ClientPool, event: dict, *, metrics: MetricsCollector | None = None
+):
     """处理单条飞书消息，从 pool 获取独立 client 实现会话隔离"""
     content = event.get("content", "").strip()
     message_id = event.get("message_id", "")
@@ -50,6 +120,12 @@ async def handle_message(pool: ClientPool, event: dict):
 
     content = content.replace(BOT_MENTION, "").strip()
 
+    # 指令检测：/ 开头的指令直接处理，不经过 Claude
+    cmd = parse_command(content)
+    if cmd is not None:
+        await handle_command(pool, metrics, event, cmd)
+        return
+
     permissions.set_sender(sender_id)
 
     sender_label = "所有者" if sender_id == OWNER_ID else "同事"
@@ -58,27 +134,33 @@ async def handle_message(pool: ClientPool, event: dict):
     session_id = compute_session_id(event)
     client = await pool.get(session_id)
 
-    await client.query(prompt, session_id=session_id)
+    # 用存储的 Claude session_id resume，没有则首次创建
+    claude_sid = pool.get_claude_session_id(session_id)
+    await client.query(prompt, session_id=claude_sid)
 
     # 从该 client 的独立 stream 收集回复
     reply_text = ""
     reaction_id = None
-    claude_session_logged = False
+    claude_session_saved = False
+    last_msg = None
     async for msg in client.receive_response():
         if isinstance(msg, AssistantMessage):
-            if not claude_session_logged and msg.session_id:
+            if not claude_session_saved and msg.session_id:
                 log_debug(f"[{session_id}] claude session: {msg.session_id}")
-                claude_session_logged = True
+                pool.save_claude_session_id(session_id, msg.session_id)
+                claude_session_saved = True
             if reaction_id is None:
                 reaction_id = add_reaction(message_id)
             for block in msg.content:
                 if isinstance(block, TextBlock):
                     reply_text += block.text
         elif isinstance(msg, ResultMessage):
-            if not claude_session_logged and msg.session_id:
+            if not claude_session_saved and msg.session_id:
                 log_debug(f"[{session_id}] claude session: {msg.session_id}")
+                pool.save_claude_session_id(session_id, msg.session_id)
             if msg.is_error and not reply_text:
                 reply_text = "抱歉，处理时出了点问题。"
+            last_msg = msg
             break
 
     if reaction_id:
@@ -86,3 +168,8 @@ async def handle_message(pool: ClientPool, event: dict):
 
     if reply_text.strip():
         reply_message(message_id, reply_text.strip())
+
+    # 记录消息指标
+    if metrics:
+        is_error = isinstance(last_msg, ResultMessage) and last_msg.is_error
+        metrics.record_message(session_id, content, not is_error, reply_text[:50])
