@@ -34,11 +34,7 @@
     <div class="flex items-center gap-2">
       <button onclick="handleClear()" id="btn-clear"
         class="px-3 py-1.5 text-xs bg-red-600 hover:bg-red-500 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
-        Clear
-      </button>
-      <button onclick="handleCompact()" id="btn-compact"
-        class="px-3 py-1.5 text-xs bg-yellow-600 hover:bg-yellow-500 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
-        Compact
+        删除 Session
       </button>
     </div>
   </header>
@@ -362,23 +358,6 @@ async function handleClear() {
     } else {
       alert("\u6e05\u9664\u5931\u8d25\uff1a" + (data.message || "\u672a\u77e5\u9519\u8bef"));
     }
-  } catch (err) {
-    alert("\u8bf7\u6c42\u5931\u8d25\uff1a" + err.message);
-  } finally {
-    btn.disabled = false;
-  }
-}
-
-async function handleCompact() {
-  if (!confirm('\u786e\u8ba4\u538b\u7f29 Session "' + sessionId + '" \u7684\u4f1a\u8bdd\u5386\u53f2\uff1f\u5386\u53f2\u5c06\u88ab\u6458\u8981\u5316\u3002')) return;
-  var btn = document.getElementById("btn-compact");
-  btn.disabled = true;
-  try {
-    var res = await fetch("/api/sessions/" + encodeURIComponent(sessionId) + "/compact", { method: "POST" });
-    if (!res.ok) throw new Error("HTTP " + res.status);
-    var data = await res.json();
-    alert(data.message || (data.ok ? "\u538b\u7f29\u6210\u529f" : "\u538b\u7f29\u5931\u8d25"));
-    if (data.ok) loadConversation();
   } catch (err) {
     alert("\u8bf7\u6c42\u5931\u8d25\uff1a" + err.message);
   } finally {

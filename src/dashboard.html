@@ -234,9 +234,7 @@ function renderSessions() {
       '<td class="px-4 py-3 text-right">' + (s.message_count ?? 0) + '</td>' +
       '<td class="px-4 py-3 text-center space-x-2">' +
         '<button onclick="clearSession(\'' + escapeHtml(id) + '\')" ' +
-          'class="px-2 py-1 text-xs bg-red-600 hover:bg-red-500 rounded transition-colors">Clear</button>' +
-        '<button onclick="compactSession(\'' + escapeHtml(id) + '\')" ' +
-          'class="px-2 py-1 text-xs bg-yellow-600 hover:bg-yellow-500 rounded transition-colors">Compact</button>' +
+          'class="px-2 py-1 text-xs bg-red-600 hover:bg-red-500 rounded transition-colors">\u5220\u9664</button>' +
       '</td>' +
     '</tr>';
   }).join('');
@@ -255,20 +253,6 @@ async function clearSession(sessionId) {
     } else {
       alert('清除失败：' + (data.message || '未知错误'));
     }
-  } catch (err) {
-    alert('请求失败：' + err.message);
-  }
-}
-
-// ── Compact Session ─────────────────────────────────
-
-async function compactSession(sessionId) {
-  if (!confirm('确认压缩 Session "' + sessionId + '" 的会话历史？历史将被摘要化。')) return;
-  try {
-    var res = await fetch('/api/sessions/' + encodeURIComponent(sessionId) + '/compact', { method: 'POST' });
-    if (!res.ok) throw new Error('status ' + res.status);
-    var data = await res.json();
-    alert(data.message || (data.ok ? '压缩成功' : '压缩失败'));
   } catch (err) {
     alert('请求失败：' + err.message);
   }
