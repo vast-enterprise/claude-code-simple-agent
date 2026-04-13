@@ -13,8 +13,8 @@
 
 ## Skill 账户权限
 
-- **aibot 是 editor 角色**：不是 admin，无法执行 migrate-post、data-backfill 等 admin+ 端点
-- 需要 admin 操作时，必须请用户手动在 Admin Panel 执行或临时提权
+- **aibot 是 admin 角色**：拥有全部操作权限，包括 migrate-post、data-backfill 等端点
+- **权限越大责任越大**：所有写操作（尤其是 admin+ 端点）必须先向用户确认再执行，不可静默操作
 
 ## Tripo CMS 特有
 
