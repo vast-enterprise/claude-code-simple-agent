@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>History — Digital Avatar</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body { font-family: 'Inter', system-ui, -apple-system, sans-serif; }
+    .fade-in { animation: fadeIn 0.3s ease-in; }
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+    .spin { animation: spin 1s linear infinite; }
+    @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body class="bg-gray-900 text-gray-100 min-h-screen">
+
+  <header class="bg-gray-800 border-b border-gray-700 px-6 py-4 flex items-center justify-between">
+    <div class="flex items-center gap-4">
+      <a href="/" class="text-gray-400 hover:text-white transition-colors text-sm flex items-center gap-1">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
+        </svg>
+        返回 Dashboard
+      </a>
+      <span class="text-gray-600">|</span>
+      <h1 class="text-xl font-bold tracking-tight">历史会话记录</h1>
+    </div>
+    <div class="flex items-center gap-3 text-sm text-gray-400">
+      <input id="history-filter" type="text" placeholder="搜索用户名、群名或 ID..."
+        oninput="renderHistory()"
+        class="px-3 py-1.5 bg-gray-800 border border-gray-600 rounded text-sm text-gray-300 placeholder-gray-500 w-64 focus:outline-none focus:border-purple-500 transition-colors" />
+    </div>
+  </header>
+
+  <main class="max-w-7xl mx-auto px-4 sm:px-6 py-6">
+
+    <div id="state-loading" class="text-center py-16">
+      <svg class="w-8 h-8 spin inline-block text-gray-500 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+          d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+      </svg>
+      <p class="text-gray-500">加载历史记录...</p>
+    </div>
+
+    <div id="state-empty" class="hidden text-center py-16">
+      <p class="text-gray-500 text-lg">暂无历史会话记录</p>
+      <p class="text-gray-600 text-sm mt-2">清除 Session 后会自动归档到此处</p>
+    </div>
+
+    <div id="history-table-section" class="hidden">
+      <div class="bg-gray-800 rounded-lg shadow-lg overflow-hidden">
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="text-gray-400 text-left">
+              <th class="px-4 py-3 bg-gray-700/50">用户 / 会话</th>
+              <th class="px-4 py-3 bg-gray-700/50">创建时间</th>
+              <th class="px-4 py-3 bg-gray-700/50">归档时间</th>
+              <th class="px-4 py-3 bg-gray-700/50 text-right">消息数</th>
+              <th class="px-4 py-3 bg-gray-700/50 text-center">操作</th>
+            </tr>
+          </thead>
+          <tbody id="history-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+  </main>
+
+<script>
+
+var historyData = [];
+
+function escapeHtml(str) {
+  var div = document.createElement("div");
+  div.textContent = String(str != null ? str : "");
+  return div.innerHTML;
+}
+
+function localTime(isoString) {
+  if (!isoString) return "--";
+  return new Date(isoString).toLocaleString("zh-CN", {
+    month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", second: "2-digit"
+  });
+}
+
+function relativeTime(isoString) {
+  if (!isoString) return "--";
+  var diff = Math.max(0, Date.now() - new Date(isoString).getTime());
+  var seconds = Math.floor(diff / 1000);
+  if (seconds < 60) return "\u521a\u521a";
+  var minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return minutes + " \u5206\u949f\u524d";
+  var hours = Math.floor(minutes / 60);
+  if (hours < 24) return hours + " \u5c0f\u65f6\u524d";
+  var days = Math.floor(hours / 24);
+  if (days < 30) return days + " \u5929\u524d";
+  return new Date(isoString).toLocaleDateString("zh-CN");
+}
+
+async function loadHistory() {
+  try {
+    var res = await fetch("/api/sessions/history");
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    historyData = await res.json();
+    if (historyData.length === 0) {
+      document.getElementById("state-loading").classList.add("hidden");
+      document.getElementById("state-empty").classList.remove("hidden");
+    } else {
+      document.getElementById("state-loading").classList.add("hidden");
+      document.getElementById("history-table-section").classList.remove("hidden");
+      renderHistory();
+    }
+  } catch (err) {
+    document.getElementById("state-loading").innerHTML =
+      '<p class="text-red-400">\u52a0\u8f7d\u5931\u8d25\uff1a' + escapeHtml(err.message) + '</p>';
+  }
+}
+
+function renderHistory() {
+  var tbody = document.getElementById("history-tbody");
+  var filterText = (document.getElementById("history-filter").value || "").toLowerCase().trim();
+
+  var entries = historyData.map(function(record, idx) {
+    return { record: record, index: idx };
+  });
+
+  if (filterText) {
+    entries = entries.filter(function(e) {
+      var r = e.record;
+      var sid = (r.session_id || "").toLowerCase();
+      var senderName = (r.sender_name || "").toLowerCase();
+      var chatName = (r.chat_name || "").toLowerCase();
+      return sid.indexOf(filterText) !== -1 || senderName.indexOf(filterText) !== -1 || chatName.indexOf(filterText) !== -1;
+    });
+  }
+
+  // 按归档时间降序（最近归档的排前面）
+  entries.sort(function(a, b) {
+    return new Date(b.record.archived_at || 0) - new Date(a.record.archived_at || 0);
+  });
+
+  if (entries.length === 0) {
+    var msg = filterText ? "\u6ca1\u6709\u5339\u914d\u7684\u8bb0\u5f55" : "\u6682\u65e0\u5386\u53f2\u8bb0\u5f55";
+    tbody.innerHTML = '<tr><td colspan="5" class="px-4 py-8 text-center text-gray-500">' + msg + '</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = entries.map(function(e, i) {
+    var r = e.record;
+    var rowBg = i % 2 === 0 ? "bg-gray-800" : "bg-gray-800/60";
+    var displayName = r.sender_name || r.session_id || "--";
+    var subtitle = r.chat_name ? "@ " + escapeHtml(r.chat_name) : ((r.session_id || "").startsWith("p2p_") ? "\u79c1\u804a" : "");
+
+    return '<tr class="' + rowBg + ' hover:bg-gray-700/50 transition-colors">' +
+      '<td class="px-4 py-3">' +
+        '<div class="font-medium text-gray-200">' + escapeHtml(displayName) +
+          (subtitle ? '<span class="text-gray-500 text-xs ml-2">' + subtitle + '</span>' : '') +
+        '</div>' +
+        '<div class="text-gray-600 text-xs font-mono mt-0.5">' + escapeHtml(r.session_id || "") + '</div>' +
+      '</td>' +
+      '<td class="px-4 py-3 text-gray-400">' + localTime(r.created_at) + '</td>' +
+      '<td class="px-4 py-3 text-gray-400" title="' + localTime(r.archived_at) + '">' + relativeTime(r.archived_at) + '</td>' +
+      '<td class="px-4 py-3 text-right">' + (r.message_count != null ? r.message_count : 0) + '</td>' +
+      '<td class="px-4 py-3 text-center">' +
+        '<a href="/session.html?history=' + e.index + '" ' +
+          'class="px-2 py-1 text-xs bg-gray-700 hover:bg-gray-600 rounded transition-colors inline-block">' +
+          '\u67e5\u770b\u5bf9\u8bdd</a>' +
+      '</td>' +
+    '</tr>';
+  }).join("");
+}
+
+loadHistory();
+
+</script>
+</body>
+</html>

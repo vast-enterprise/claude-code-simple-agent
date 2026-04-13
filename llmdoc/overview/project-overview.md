@@ -11,7 +11,7 @@
 
 核心产物 `tripo-avatar` 是一个 Python 异步服务，通过 `lark-cli` 订阅飞书消息事件，经过滤后交由 Claude Code SDK 处理，实现"数字分身"自动回复。架构为多进程池模型——`ClientPool` 为每个 session 惰性创建独立 `ClaudeSDKClient`（独立 Claude 子进程），不同 session 并行，同一 session 内消息串行。所有飞书交互通过 `lark-cli` subprocess 完成。
 
-系统内置可观测性体系：`SessionStore` 将 session 映射持久化到磁盘（原子写入），支持重启后 session resume（Pool 层通过 `--resume` 参数恢复 Claude 子进程上下文）；`MetricsCollector` 在内存中跟踪运行时指标和最近 200 条消息摘要；`aiohttp` HTTP API（端口 8420）暴露状态、session 管理端点、Dashboard 和独立 Session 详情页（通过解析 Claude JSONL 日志展示完整对话时间线）；`notify` 模块在进程崩溃或断连时推送飞书异常通知（60 秒同类防风暴）。飞书端仅保留 `/clear` 指令由 handler 自行处理，其他 slash commands（`/compact`、`/model` 等）直接透传给 Claude Code。
+系统内置可观测性体系：`SessionStore` 将 session 映射持久化到磁盘（原子写入），支持重启后 session resume（Pool 层通过 `--resume` 参数恢复 Claude 子进程上下文）；被清除的 session 自动归档到 `sessions_history.json`，保留元数据和 claude_session_id 以便后续通过历史记录页回溯完整对话内容；`MetricsCollector` 在内存中跟踪运行时指标和最近 200 条消息摘要；`aiohttp` HTTP API（端口 8420）暴露状态、session 管理端点、Dashboard、独立 Session 详情页（通过解析 Claude JSONL 日志展示完整对话时间线）和历史记录页（展示归档 session 列表，支持搜索和对话回溯）；`notify` 模块在进程崩溃或断连时推送飞书异常通知（60 秒同类防风暴）。飞书端仅保留 `/clear` 指令由 handler 自行处理，其他 slash commands（`/compact`、`/model` 等）直接透传给 Claude Code。
 
 ## 3. 技术栈
 
@@ -37,11 +37,12 @@ tripo-work-center/
 │   ├── lark.py          # 飞书交互封装（reaction、reply、用户名/群名解析）
 │   ├── config.py        # 配置加载 + 结构化日志 + NOTIFY_CONFIG
 │   ├── notify.py        # 飞书异常通知，60 秒同类防风暴
-│   ├── store.py         # Session 映射持久化（data/sessions.json），原子写入
+│   ├── store.py         # Session 映射持久化（data/sessions.json）+ 历史归档（data/sessions_history.json），原子写入
 │   ├── metrics.py       # 内存指标收集器，环形缓冲存最近 200 条消息摘要
-│   ├── server.py        # aiohttp HTTP API server（端口 8420），Dashboard + Session 详情页 + REST 端点 + Conversation API
-│   ├── dashboard.html   # 管理后台（暗色主题，Tailwind CDN，搜索过滤，session 链接到详情页）
-│   ├── session.html     # Session 详情页（对话时间线，工具调用折叠展示）
+│   ├── server.py        # aiohttp HTTP API server（端口 8420），Dashboard + Session 详情页 + 历史记录页 + REST 端点 + Conversation API
+│   ├── dashboard.html   # 管理后台（暗色主题，Tailwind CDN，搜索过滤，session 链接到详情页，历史记录链接）
+│   ├── session.html     # Session 详情页（对话时间线，工具调用折叠展示，支持历史模式）
+│   ├── history.html     # 历史会话记录页（归档 session 列表，搜索过滤，对话回溯）
 │   └── __tests__/       # 单元测试
 ├── persona.md           # 数字分身人格定义，注入 system_prompt
 ├── config.example.json  # 配置模板（owner_id、模型参数、API 环境变量）

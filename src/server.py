@@ -9,6 +9,7 @@ from src.config import ROOT, log_info
 
 _DASHBOARD_PATH = Path(__file__).parent / "dashboard.html"
 _SESSION_PAGE_PATH = Path(__file__).parent / "session.html"
+_HISTORY_PAGE_PATH = Path(__file__).parent / "history.html"
 
 
 def _json(data, status=200):
@@ -194,11 +195,68 @@ async def _handle_session_conversation(request):
     })
 
 
+async def _handle_history(request):
+    """返回归档的历史 session 列表"""
+    pool = request.app["pool"]
+    if not pool._store:
+        return _json([])
+    history = pool._store.load_history()
+    safe = [
+        {k: v for k, v in record.items() if k != "claude_session_id"}
+        for record in history
+    ]
+    return _json(safe)
+
+
+async def _handle_history_conversation(request):
+    """返回指定历史 session 的完整会话内容"""
+    pool = request.app["pool"]
+    if not pool._store:
+        return _json({"error": "No store configured", "messages": []}, status=400)
+
+    try:
+        index = int(request.match_info["index"])
+    except ValueError:
+        return _json({"error": "Invalid index", "messages": []}, status=400)
+
+    history = pool._store.load_history()
+    if index < 0 or index >= len(history):
+        return _json({"error": "Index out of range", "messages": []}, status=404)
+
+    record = history[index]
+    claude_sid = record.get("claude_session_id")
+    if not claude_sid:
+        return _json({
+            "session_id": record.get("session_id", ""),
+            "error": "No Claude session ID in archive",
+            "messages": [],
+        })
+
+    log_dir = _get_claude_log_dir()
+    log_path = log_dir / f"{claude_sid}.jsonl"
+    messages = _parse_session_log(log_path)
+
+    return _json({
+        "session_id": record.get("session_id", ""),
+        "sender_name": record.get("sender_name", ""),
+        "chat_name": record.get("chat_name", ""),
+        "archived_at": record.get("archived_at", ""),
+        "messages": messages,
+    })
+
+
 async def _handle_session_page(request):
     """返回 session 详情页 HTML"""
     if not _SESSION_PAGE_PATH.exists():
         return web.Response(text="Session page not found", status=404)
     return web.FileResponse(_SESSION_PAGE_PATH)
+
+
+async def _handle_history_page(request):
+    """返回历史记录页 HTML"""
+    if not _HISTORY_PAGE_PATH.exists():
+        return web.Response(text="History page not found", status=404)
+    return web.FileResponse(_HISTORY_PAGE_PATH)
 
 
 # ── App 创建与启动 ──
@@ -211,8 +269,11 @@ def _create_app(pool, metrics) -> web.Application:
 
     app.router.add_get("/", _handle_dashboard)
     app.router.add_get("/session.html", _handle_session_page)
+    app.router.add_get("/history.html", _handle_history_page)
     app.router.add_get("/api/status", _handle_status)
     app.router.add_get("/api/sessions", _handle_sessions)
+    app.router.add_get("/api/sessions/history", _handle_history)
+    app.router.add_get("/api/sessions/history/{index}/conversation", _handle_history_conversation)
     app.router.add_get("/api/sessions/{session_id}/messages", _handle_session_messages)
     app.router.add_get("/api/sessions/{session_id}/conversation", _handle_session_conversation)
     app.router.add_post("/api/sessions/{session_id}/clear", _handle_session_clear)

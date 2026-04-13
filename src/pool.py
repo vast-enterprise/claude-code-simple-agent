@@ -88,6 +88,7 @@ class ClientPool:
 
             store_removed = False
             if self._store:
+                self._store.archive(session_id)
                 store_removed = self._store.remove(session_id)
 
             removed = client is not None or store_removed

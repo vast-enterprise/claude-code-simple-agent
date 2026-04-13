@@ -106,6 +106,15 @@
 
   </main>
 
+  <!-- 直达底部按钮 -->
+  <button id="btn-scroll-bottom" onclick="scrollToBottom()"
+    class="hidden fixed bottom-6 right-6 w-10 h-10 bg-purple-600 hover:bg-purple-500 rounded-full shadow-lg flex items-center justify-center transition-all z-30"
+    title="跳到底部">
+    <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 14l-7 7m0 0l-7-7m7 7V3" />
+    </svg>
+  </button>
+
 <script>
 // ── 工具函数 ──────────────────────────────────────────
 
@@ -153,7 +162,9 @@ function jsonPretty(obj) {
 
 // ── 状态管理 ──────────────────────────────────────────
 
-var sessionId = new URLSearchParams(window.location.search).get("id");
+var params = new URLSearchParams(window.location.search);
+var sessionId = params.get("id");
+var historyIndex = params.get("history");
 
 function showState(stateId) {
   ["state-loading", "state-error", "state-no-id", "state-empty", "conversation-timeline"].forEach(function(id) {
@@ -165,6 +176,10 @@ function showState(stateId) {
 // ── 元信息加载 ────────────────────────────────────────
 
 async function loadMeta() {
+  if (historyIndex != null) {
+    // 历史模式：从 history conversation API 获取元信息
+    return;
+  }
   try {
     var res = await fetch("/api/sessions");
     if (!res.ok) return;
@@ -189,12 +204,28 @@ async function loadConversation() {
   showState("state-loading");
 
   try {
-    var res = await fetch("/api/sessions/" + encodeURIComponent(sessionId) + "/conversation");
+    var url;
+    if (historyIndex != null) {
+      url = "/api/sessions/history/" + encodeURIComponent(historyIndex) + "/conversation";
+    } else {
+      url = "/api/sessions/" + encodeURIComponent(sessionId) + "/conversation";
+    }
+
+    var res = await fetch(url);
     if (!res.ok) throw new Error("HTTP " + res.status);
     var data = await res.json();
 
     if (data.claude_session_id) {
       document.getElementById("meta-claude-sid").textContent = data.claude_session_id;
+    }
+
+    // 历史模式：用返回数据填充元信息
+    if (historyIndex != null && data.session_id) {
+      _sessionMeta = {
+        sender_name: data.sender_name,
+        chat_name: data.chat_name
+      };
+      updateHeaderWithNames();
     }
 
     var messages = data.messages;
@@ -365,17 +396,49 @@ async function handleClear() {
   }
 }
 
+// ── 滚动按钮 ────────────────────────────────────────
+
+function scrollToBottom() {
+  window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" });
+}
+
+window.addEventListener("scroll", function() {
+  var btn = document.getElementById("btn-scroll-bottom");
+  var distanceFromBottom = document.body.scrollHeight - window.innerHeight - window.scrollY;
+  if (distanceFromBottom > 300) {
+    btn.classList.remove("hidden");
+    btn.classList.add("flex");
+  } else {
+    btn.classList.add("hidden");
+    btn.classList.remove("flex");
+  }
+});
+
 // ── 初始化 ────────────────────────────────────────────
 
 (function init() {
-  if (!sessionId) {
+  var isHistory = historyIndex != null;
+
+  if (!sessionId && !isHistory) {
     showState("state-no-id");
     document.title = "Session \u2014 \u7f3a\u5c11 ID";
     return;
   }
 
-  document.getElementById("header-session-id").textContent = sessionId;
-  document.title = "Session: " + sessionId + " \u2014 Digital Avatar";
+  if (isHistory) {
+    // 历史模式：隐藏删除按钮，更新返回链接
+    document.getElementById("btn-clear").style.display = "none";
+    var backLink = document.querySelector("header a");
+    if (backLink) {
+      backLink.href = "/history.html";
+      backLink.innerHTML = '<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" /></svg> \u8fd4\u56de\u5386\u53f2\u8bb0\u5f55';
+    }
+    document.getElementById("header-session-id").textContent = "\u5386\u53f2\u4f1a\u8bdd #" + historyIndex;
+    document.title = "\u5386\u53f2\u4f1a\u8bdd \u2014 Digital Avatar";
+  } else {
+    document.getElementById("header-session-id").textContent = sessionId;
+    document.title = "Session: " + sessionId + " \u2014 Digital Avatar";
+  }
 
   loadMeta().then(updateHeaderWithNames);
   loadConversation();
