@@ -5,19 +5,34 @@ import asyncio
 import json
 import os
 import signal
+import sys
 
 from claude_agent_sdk import ClaudeAgentOptions
 from claude_agent_sdk.types import SystemPromptPreset
 
 from src.config import ROOT, CONFIG, PERSONA, HEADLESS_RULES, DISALLOWED_TOOLS, log_debug, log_info
 from src.handler import should_respond, handle_message, compute_session_id
+from src.metrics import MetricsCollector
+from src.notify import notify_error
 from src.permissions import permission_gate
 from src.pool import ClientPool
+from src.server import start_server
 from src.session import SessionDispatcher
 from src.store import SessionStore
 
 # 优雅关闭信号
 _shutdown = asyncio.Event()
+
+# 全局异常钩子：进程崩溃时推飞书通知
+_original_excepthook = sys.excepthook
+
+
+def _crash_hook(exc_type, exc_value, exc_tb):
+    notify_error("数字分身崩溃", f"{exc_type.__name__}: {exc_value}")
+    _original_excepthook(exc_type, exc_value, exc_tb)
+
+
+sys.excepthook = _crash_hook
 
 
 async def start_event_listener():
@@ -79,7 +94,10 @@ async def main():
 
     store = SessionStore(ROOT / "data" / "sessions.json")
     pool = ClientPool(options, store=store)
+    metrics = MetricsCollector()
     dispatcher = SessionDispatcher()
+
+    server_runner = await start_server(pool, metrics, port=8420)
 
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGTERM, signal.SIGINT):
@@ -89,6 +107,8 @@ async def main():
         while not _shutdown.is_set():
             line_bytes = await _read_or_shutdown(listener.stdout)
             if line_bytes is None or len(line_bytes) == 0:
+                if not _shutdown.is_set():
+                    notify_error("飞书事件监听断连", "lark-cli 进程退出")
                 break
             line = line_bytes.decode().strip()
             if not line:
@@ -105,13 +125,16 @@ async def main():
             log_info(f"收到消息 [{session_id}]: {event.get('content', '')[:50]}...")
             await dispatcher.dispatch(
                 session_id,
-                handle_message(pool, event),
+                handle_message(pool, event, metrics=metrics),
             )
 
     except KeyboardInterrupt:
         log_info("正在关闭...")
     finally:
         log_info("开始清理...")
+        # 0. 停止 HTTP server（不再接受新请求）
+        if server_runner:
+            await server_runner.cleanup()
         # 1. 杀掉 lark-cli 整个进程组（start_new_session=True 建的独立组）
         if listener.returncode is None:
             try:
