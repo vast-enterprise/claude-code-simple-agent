@@ -54,3 +54,4 @@ HEADLESS_RULES = """
 - 需要用户确认的事情，直接在回复文本中说明，等待下一条消息
 - 所有输出通过飞书消息返回，保持简洁
 """
+NOTIFY_CONFIG: dict = CONFIG.get("notify", {"enabled": False})
