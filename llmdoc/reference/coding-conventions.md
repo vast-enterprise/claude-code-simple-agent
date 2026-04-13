@@ -4,11 +4,11 @@
 
 ## 1. 核心摘要
 
-项目为 Python >= 3.12 异步服务，使用 `pyproject.toml` 管理依赖，pytest 运行测试。代码组织遵循扁平模块结构，测试与源码同级 colocated，所有飞书交互通过 `lark-cli` subprocess 完成且强制 `--as bot`。
+项目为 Python >= 3.12 异步服务，运行时依赖 `claude-agent-sdk` 和 `aiohttp`，使用 `pyproject.toml` 管理依赖，pytest 运行测试。代码组织遵循扁平模块结构，测试与源码同级 colocated，所有飞书交互通过 `lark-cli` subprocess 完成且强制 `--as bot`。
 
 ## 2. 模块组织
 
-- 源码位于 `src/`，每个模块一个文件，职责单一（config / lark / permissions / handler / pool / session / main）
+- 源码位于 `src/`，每个模块一个文件，职责单一（config / lark / permissions / handler / pool / session / main / notify / store / metrics / server）
 - 测试位于 `src/__tests__/`，与 `src/` 同级 colocated，文件名与被测模块一致
 - `src/__init__.py` 和 `src/__tests__/__init__.py` 均为空包标记文件
 - 配置：`pyproject.toml` (`[tool.pytest.ini_options]`) — `testpaths = ["src/__tests__"]`, `pythonpath = ["."]`
@@ -60,6 +60,7 @@
 - **lark-cli 调用**: `src/lark.py` (`add_reaction`, `remove_reaction`, `reply_message`) — 全部 subprocess + `--as bot`
 - **日志系统**: `src/config.py:9-29` — `logging.getLogger("avatar")` + `log_debug/log_info/log_error`
 - **错误处理**: `src/lark.py:40`, `src/lark.py:58` — `log_error()` 日志模式
-- **异步入口**: `src/main.py:133-134` — `asyncio.run(main())`
+- **原子写入**: `src/store.py:58-73` — `tmpfile → fsync → os.replace` 模式
+- **异步入口**: `src/main.py:158-159` — `asyncio.run(main())`
 - **测试 async 包装**: `src/__tests__/handler.py:15-16`, `src/__tests__/pool.py:11-12` — `run_async` 辅助函数
 - **导入风格**: `src/handler.py:1-8` — 三段式导入示例

@@ -8,7 +8,7 @@
 2. 编辑 `config.json`，填写所有字段（字段说明见下方）。
 3. 确认 `config.json` 已被 `.gitignore` 排除（已默认配置），绝不提交到版本控制。
 
-加载逻辑见 `src/config.py:34-37` — 文件不存在时 `exit(1)` 并提示。
+加载逻辑见 `src/config.py:34-39` — 文件不存在时 `exit(1)` 并提示。
 
 ## 2. config.json 字段说明
 
@@ -20,6 +20,7 @@
 | `effort` | string | `"max"` | 推理 effort 级别，传入 `ClaudeAgentOptions` |
 | `max_turns` | number | `100` | 单次对话最大轮次 |
 | `env` | object | — | 环境变量子对象，注入 Claude SDK 子进程（见下方） |
+| `notify` | object | `{"enabled": false}` | 飞书异常通知配置（见下方） |
 
 ## 3. 环境变量配置（env 子对象）
 
@@ -35,6 +36,27 @@
 | `ANTHROPIC_DEFAULT_HAIKU_MODEL` | Haiku 模型 ID |
 | `ANTHROPIC_DEFAULT_SONNET_MODEL` | Sonnet 模型 ID |
 | `ANTHROPIC_DEFAULT_OPUS_MODEL` | Opus 模型 ID |
+
+## 3b. 异常通知配置（notify 子对象）
+
+`config.json` 的 `notify` 字段控制飞书异常通知行为。加载逻辑见 `src/config.py:57`。
+
+| 字段 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `enabled` | boolean | `false` | 是否启用异常通知 |
+| `receive_id` | string | — | 通知接收方 ID（`ou_xxx` 格式） |
+| `receive_id_type` | string | `"open_id"` | 接收方 ID 类型 |
+
+通知触发场景：进程崩溃（`sys.excepthook`）、lark-cli 断连。60 秒内同类通知自动节流。
+
+## 3c. .env 文件
+
+项目支持 `.env` 文件存放敏感密钥（已被 `.gitignore` 排除）。
+
+| 变量 | 用途 |
+|------|------|
+| `CMS_STAGING_API_KEY` | CMS staging 环境 API Key |
+| `CMS_PROD_API_KEY` | CMS production 环境 API Key |
 
 ## 4. 修改 persona.md
 
@@ -78,10 +100,12 @@ cd /Users/macbookair/Desktop/projects/tripo-work-center
 python3 src/main.py
 ```
 
-启动后会输出所有者、工作目录、模型信息，然后进入飞书事件监听循环。`Ctrl+C` 或 `SIGTERM` 触发优雅关闭（asyncio-native 信号处理）。
+启动后会输出所有者、工作目录、模型信息，启动 HTTP API server（`http://localhost:8420`），然后进入飞书事件监听循环。`Ctrl+C` 或 `SIGTERM` 触发优雅关闭（asyncio-native 信号处理）。
+
+Session 数据持久化到 `data/sessions.json`（`data/` 目录已被 `.gitignore` 排除，自动创建）。
 
 ## 8. 密钥安全
 
-`.gitignore` 已排除 `config.json`，规则见 `.gitignore:2`。
+`.gitignore` 已排除 `config.json`、`.env` 和 `data/` 目录。
 
-验证方式：`git status` 确认 `config.json` 不在 untracked/modified 列表中。如果意外提交，立即轮换 `ANTHROPIC_AUTH_TOKEN` 等敏感值。
+验证方式：`git status` 确认 `config.json`、`.env`、`data/` 不在 untracked/modified 列表中。如果意外提交，立即轮换 `ANTHROPIC_AUTH_TOKEN`、CMS API Key 等敏感值。

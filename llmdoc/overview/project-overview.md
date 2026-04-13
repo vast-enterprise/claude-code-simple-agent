@@ -11,12 +11,15 @@
 
 核心产物 `tripo-avatar` 是一个 Python 异步服务，通过 `lark-cli` 订阅飞书消息事件，经过滤后交由 Claude Code SDK 处理，实现"数字分身"自动回复。架构为多进程池模型——`ClientPool` 为每个 session 惰性创建独立 `ClaudeSDKClient`（独立 Claude 子进程），不同 session 并行，同一 session 内消息串行。所有飞书交互通过 `lark-cli` subprocess 完成。
 
+系统内置可观测性体系：`SessionStore` 将 session 映射持久化到磁盘（原子写入），支持重启后 session resume；`MetricsCollector` 在内存中跟踪运行时指标和最近 200 条消息摘要；`aiohttp` HTTP API（端口 8420）暴露状态、session 管理端点和单文件 Dashboard；`notify` 模块在进程崩溃或断连时推送飞书异常通知（60 秒同类防风暴）。飞书端支持 `/status`、`/sessions`、`/clear`、`/compact` 指令直接查询和管理。
+
 ## 3. 技术栈
 
 | 层面 | 技术 |
 |------|------|
 | 语言 | Python >= 3.12 |
-| AI 引擎 | `claude-agent-sdk >= 0.1.56`（唯一运行时依赖） |
+| AI 引擎 | `claude-agent-sdk >= 0.1.56` |
+| HTTP Server | `aiohttp >= 3.9`（Dashboard API） |
 | 飞书交互 | `lark-cli`（CLI 工具，subprocess 调用，非 SDK） |
 | 测试 | pytest，测试路径 `src/__tests__/` |
 | 配置 | `config.json`（运行时，gitignore）+ `persona.md`（人格注入） |
@@ -26,14 +29,19 @@
 ```
 tripo-work-center/
 ├── src/
-│   ├── main.py          # 入口：事件循环、进程管理、asyncio-native 信号处理、ClientPool + SessionDispatcher 集成
-│   ├── pool.py          # ClientPool：per-session 独立 ClaudeSDKClient 池，惰性创建 + Lock 防并发
-│   ├── handler.py       # 消息过滤（should_respond）+ 处理（handle_message, 从 pool 获取 client）+ session 计算
+│   ├── main.py          # 入口：事件循环、进程管理、信号处理、崩溃通知、HTTP server 启动
+│   ├── pool.py          # ClientPool：per-session 独立 client 池 + SessionStore 集成 + session resume
+│   ├── handler.py       # 消息过滤 + 飞书指令解析（/clear /compact /sessions /status）+ metrics 集成
 │   ├── session.py       # 并发调度器（SessionDispatcher）：per-session 队列 + worker
 │   ├── permissions.py   # 工具调用权限门控（permission_gate），contextvars 隔离
 │   ├── lark.py          # 飞书交互封装（reaction、reply）
-│   ├── config.py        # 配置加载（config.json + persona.md + HEADLESS_RULES）+ 结构化日志（avatar logger）
-│   └── __tests__/       # 单元测试（handler、permissions、lark、pool、session）
+│   ├── config.py        # 配置加载 + 结构化日志 + NOTIFY_CONFIG
+│   ├── notify.py        # 飞书异常通知，60 秒同类防风暴
+│   ├── store.py         # Session 映射持久化（data/sessions.json），原子写入
+│   ├── metrics.py       # 内存指标收集器，环形缓冲存最近 200 条消息摘要
+│   ├── server.py        # aiohttp HTTP API server（端口 8420），Dashboard + REST 端点
+│   ├── dashboard.html   # 单文件管理后台（暗色主题，Tailwind CDN，30 秒轮询）
+│   └── __tests__/       # 单元测试
 ├── persona.md           # 数字分身人格定义，注入 system_prompt
 ├── config.example.json  # 配置模板（owner_id、模型参数、API 环境变量）
 ├── CLAUDE.md            # Agent 行为约束 + Skills 目录
@@ -43,29 +51,40 @@ tripo-work-center/
 ## 5. 核心依赖关系
 
 ```
-main.py ──→ config.py（CONFIG, PERSONA, ROOT, log_debug, log_info）
-   │──→ pool.py（ClientPool → per-session 独立 client 池）
+main.py ──→ config.py（CONFIG, PERSONA, ROOT, HEADLESS_RULES, DISALLOWED_TOOLS）
+   │──→ pool.py（ClientPool）
    │──→ handler.py（should_respond, handle_message, compute_session_id）
-   │──→ permissions.py（permission_gate → 注册为 SDK can_use_tool 回调）
-   │──→ session.py（SessionDispatcher → 并发分发消息）
+   │──→ permissions.py（permission_gate）
+   │──→ session.py（SessionDispatcher）
+   │──→ notify.py（notify_error — 崩溃通知 + 断连通知）
+   │──→ metrics.py（MetricsCollector）
+   │──→ store.py（SessionStore）
+   │──→ server.py（start_server — HTTP API + Dashboard）
    │
 pool.py ──→ config.py（log_debug, log_error）
+   │──→ store.py（SessionStore — 持久化 session 映射 + Claude session_id）
    │──→ claude_agent_sdk（ClaudeSDKClient, ClaudeAgentOptions）
    │
 handler.py ──→ config.py（OWNER_ID, BOT_NAME, log_debug）
-   │──→ pool.py（ClientPool → pool.get(session_id) 获取独立 client）
+   │──→ pool.py（ClientPool）
    │──→ lark.py（add_reaction, remove_reaction, reply_message）
-   │──→ permissions（set_sender → contextvars 写入当前发送者）
+   │──→ permissions（set_sender）
+   │──→ metrics.py（MetricsCollector — record_message）
    │
+server.py ──→ config.py（log_info）
+   │──→ aiohttp（web.Application, AppRunner, TCPSite）
+   │
+notify.py ──→ config.py（NOTIFY_CONFIG, log_error）
+store.py ──→ config.py（log_error）
+metrics.py ──→ 无内部依赖（纯数据收集器）
 session.py ──→ config.py（log_error）
-   │
-permissions.py ──→ config.py（OWNER_ID）
-   │──→ contextvars（_current_sender_id 为 ContextVar，支持并发隔离）
-   │
+permissions.py ──→ config.py（OWNER_ID）+ contextvars
 lark.py ──→ config.py（log_error）
-config.py ──→ 无内部依赖（叶节点，读取 config.json + persona.md + HEADLESS_RULES + 日志系统）
+config.py ──→ 无内部依赖（叶节点）
 ```
 
 ## 6. 数据流概要
 
-`lark-cli stdout (NDJSON)` → `main.py` 逐行读取解析（`_read_or_shutdown` 多路复用）→ `should_respond` 过滤 → `compute_session_id` 计算会话标识 → `SessionDispatcher.dispatch` 分发到 per-session 队列 → `handle_message(pool, event)` 从 `ClientPool` 获取独立 client → 组装 prompt 并调用 Claude SDK（带 session_id）→ `permission_gate` 拦截敏感工具调用（contextvars 隔离 sender）→ `lark.reply_message` 回复飞书。
+`lark-cli stdout (NDJSON)` → `main.py` 逐行读取解析（`_read_or_shutdown` 多路复用）→ `should_respond` 过滤 → `compute_session_id` 计算会话标识 → `SessionDispatcher.dispatch` 分发到 per-session 队列 → `handle_message(pool, event, metrics=metrics)` 检测飞书指令（`/clear` 等直接处理）→ 非指令消息从 `ClientPool` 获取独立 client（`SessionStore` 持久化 + Claude session_id resume）→ 组装 prompt 并调用 Claude SDK → `permission_gate` 拦截敏感工具调用 → `lark.reply_message` 回复飞书 → `MetricsCollector.record_message` 记录指标（try/finally 确保异常也计入）。
+
+并行运行：`aiohttp` HTTP server（端口 8420）提供 `/api/status`、`/api/sessions` 等端点和 Dashboard UI；`notify` 在崩溃/断连时推送飞书通知。
