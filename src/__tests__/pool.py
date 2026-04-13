@@ -119,6 +119,108 @@ class TestClientPool:
         run_async(run())
 
 
+class TestClientPoolFIFO:
+    """per-session 消息 FIFO 测试"""
+
+    def _make_pool(self):
+        return ClientPool(MagicMock())
+
+    def test_enqueue_and_peek(self):
+        pool = self._make_pool()
+        pool.enqueue_message("s1", "om_1", "hello")
+
+        entry = pool.peek_pending("s1")
+        assert entry is not None
+        assert entry["message_id"] == "om_1"
+        assert entry["content"] == "hello"
+        assert "timestamp" in entry
+
+    def test_dequeue_returns_and_removes(self):
+        pool = self._make_pool()
+        pool.enqueue_message("s1", "om_1", "hello")
+
+        entry = pool.dequeue_message("s1")
+        assert entry["message_id"] == "om_1"
+        assert pool.peek_pending("s1") is None
+
+    def test_fifo_order(self):
+        pool = self._make_pool()
+        pool.enqueue_message("s1", "om_1", "first")
+        pool.enqueue_message("s1", "om_2", "second")
+
+        assert pool.dequeue_message("s1")["message_id"] == "om_1"
+        assert pool.dequeue_message("s1")["message_id"] == "om_2"
+
+    def test_different_sessions_independent(self):
+        pool = self._make_pool()
+        pool.enqueue_message("s1", "om_1", "hello")
+        pool.enqueue_message("s2", "om_2", "world")
+
+        assert pool.peek_pending("s1")["message_id"] == "om_1"
+        assert pool.peek_pending("s2")["message_id"] == "om_2"
+
+    def test_has_pending(self):
+        pool = self._make_pool()
+        assert pool.has_pending("s1") is False
+        pool.enqueue_message("s1", "om_1", "hello")
+        assert pool.has_pending("s1") is True
+        pool.dequeue_message("s1")
+        assert pool.has_pending("s1") is False
+
+    def test_peek_empty_returns_none(self):
+        pool = self._make_pool()
+        assert pool.peek_pending("s1") is None
+
+    def test_dequeue_empty_returns_none(self):
+        pool = self._make_pool()
+        assert pool.dequeue_message("s1") is None
+
+    def test_get_client_returns_none_when_no_client(self):
+        pool = self._make_pool()
+        assert pool.get_client("s1") is None
+
+    @patch("src.pool.ClaudeSDKClient")
+    def test_get_client_returns_existing(self, MockClient):
+        mock_instance = MagicMock()
+        mock_instance.connect = AsyncMock()
+        MockClient.return_value = mock_instance
+
+        pool = self._make_pool()
+
+        async def run():
+            await pool.get("s1")
+            assert pool.get_client("s1") is mock_instance
+
+        run_async(run())
+
+    @patch("src.pool.ClaudeSDKClient")
+    def test_remove_clears_pending(self, MockClient):
+        mock_instance = MagicMock()
+        mock_instance.connect = AsyncMock()
+        mock_instance.disconnect = AsyncMock()
+        MockClient.return_value = mock_instance
+
+        pool = self._make_pool()
+
+        async def run():
+            await pool.get("s1")
+            pool.enqueue_message("s1", "om_1", "hello")
+            await pool.remove("s1")
+            assert pool.has_pending("s1") is False
+
+        run_async(run())
+
+    def test_shutdown_clears_pending(self):
+        pool = self._make_pool()
+        pool.enqueue_message("s1", "om_1", "hello")
+
+        async def run():
+            await pool.shutdown()
+
+        run_async(run())
+        assert pool.has_pending("s1") is False
+
+
 class TestClientPoolWithStore:
     """ClientPool + SessionStore 集成测试"""
 

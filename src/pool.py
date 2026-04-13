@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import asyncio
+import collections
 import contextlib
 import dataclasses
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
 from claude_agent_sdk import ClaudeSDKClient, ClaudeAgentOptions
@@ -33,6 +35,7 @@ class ClientPool:
         self._store = store
         self._clients: dict[str, ClaudeSDKClient] = {}
         self._locks: dict[str, asyncio.Lock] = {}
+        self._pending: dict[str, collections.deque] = {}
 
     async def get(self, session_id: str) -> ClaudeSDKClient:
         """获取指定 session 的 client，不存在则创建并 connect"""
@@ -96,6 +99,7 @@ class ClientPool:
                 log_debug(f"已移除 session: {session_id}")
 
         self._locks.pop(session_id, None)
+        self._pending.pop(session_id, None)
         return removed
 
     def list_sessions(self) -> dict:
@@ -122,8 +126,43 @@ class ClientPool:
             return set(self._store.load_all().keys())
         return set()
 
+    # ── per-session 消息 FIFO ──
+
+    def get_client(self, session_id: str) -> ClaudeSDKClient | None:
+        """获取已有 client（不创建新的）。用于 /interrupt 等需要操作现有 client 的场景。"""
+        return self._clients.get(session_id)
+
+    def enqueue_message(self, session_id: str, message_id: str, content: str) -> None:
+        """将飞书消息入队到 per-session FIFO，用于 reader task 匹配 response → reply"""
+        if session_id not in self._pending:
+            self._pending[session_id] = collections.deque()
+        self._pending[session_id].append({
+            "message_id": message_id,
+            "content": content,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        })
+
+    def peek_pending(self, session_id: str) -> dict | None:
+        """查看 FIFO 队头（不弹出）。返回 None 如果队列为空。"""
+        q = self._pending.get(session_id)
+        if q:
+            return q[0]
+        return None
+
+    def dequeue_message(self, session_id: str) -> dict | None:
+        """弹出 FIFO 队头。返回 None 如果队列为空。"""
+        q = self._pending.get(session_id)
+        if q:
+            return q.popleft()
+        return None
+
+    def has_pending(self, session_id: str) -> bool:
+        """是否有待处理消息"""
+        q = self._pending.get(session_id)
+        return bool(q)
+
     async def shutdown(self):
-        """断开所有 client"""
+        """断开所有 client，清空 FIFO"""
         for sid, client in self._clients.items():
             try:
                 await client.disconnect()
@@ -131,3 +170,4 @@ class ClientPool:
                 log_error(f"disconnect {sid} 失败: {e}")
         self._clients.clear()
         self._locks.clear()
+        self._pending.clear()

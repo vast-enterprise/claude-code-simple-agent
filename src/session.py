@@ -1,58 +1,82 @@
-"""Session 调度器：per-session 队列 + worker"""
+"""Session 调度器：消息直推 + per-session reader task
+
+消息到达时立即 send_message（非阻塞，仅写 stdin）。
+每个 session 有一个长驻 reader task 持续读取 Claude 响应并回复飞书。
+"""
 
 import asyncio
+from typing import Callable, Awaitable
 
-from src.config import log_error
+from src.config import log_debug, log_error
 
 
 class SessionDispatcher:
     def __init__(self):
-        self._queues: dict[str, asyncio.Queue] = {}
-        self._workers: dict[str, asyncio.Task] = {}
+        self._readers: dict[str, asyncio.Task] = {}
 
-    async def dispatch(self, session_id: str, coro):
-        """将协程分发到对应 session 的队列，首次使用时自动创建 worker"""
-        if session_id not in self._queues:
-            self._queues[session_id] = asyncio.Queue()
-            self._workers[session_id] = asyncio.create_task(
-                self._worker(session_id)
-            )
-        await self._queues[session_id].put(coro)
+    async def dispatch(
+        self,
+        session_id: str,
+        send_coro: Awaitable,
+        reader_factory: Callable[[], Awaitable] | None = None,
+    ):
+        """分发消息：立即 await send_coro，并确保 reader task 已启动。
 
-    async def _worker(self, session_id: str):
-        """单个 session 的消费循环（串行处理）"""
-        queue = self._queues[session_id]
-        while True:
-            coro = await queue.get()
+        Args:
+            session_id: 会话标识
+            send_coro: send_message 协程（非阻塞，仅写 stdin + 入队 FIFO）
+            reader_factory: 返回 session_reader 协程的工厂函数，首次消息时调用
+        """
+        # send_message 是非阻塞的（仅写 stdin），直接 await
+        try:
+            await send_coro
+        except Exception as e:
+            log_error(f"[Session {session_id}] send 出错: {e}")
+
+        # 确保 reader task 已启动
+        if reader_factory and session_id not in self._readers:
+            self._start_reader(session_id, reader_factory)
+
+    def _start_reader(self, session_id: str, reader_factory: Callable[[], Awaitable]):
+        """启动 per-session reader task"""
+        async def _reader_wrapper():
             try:
-                await coro
+                await reader_factory()
+            except asyncio.CancelledError:
+                log_debug(f"[Session {session_id}] reader 已取消")
             except Exception as e:
-                log_error(f"[Session {session_id}] 处理出错: {e}")
+                log_error(f"[Session {session_id}] reader 异常退出: {e}")
             finally:
-                queue.task_done()
+                self._readers.pop(session_id, None)
 
-    async def drain(self, session_id: str):
-        """等待指定 session 队列中所有任务完成"""
-        if session_id in self._queues:
-            await self._queues[session_id].join()
+        task = asyncio.create_task(_reader_wrapper())
+        self._readers[session_id] = task
+        log_debug(f"[Session {session_id}] reader task 已启动")
+
+    def cancel_reader(self, session_id: str):
+        """取消指定 session 的 reader task（用于 /clear 删除 session 时）"""
+        task = self._readers.pop(session_id, None)
+        if task and not task.done():
+            task.cancel()
+            log_debug(f"[Session {session_id}] reader task 已取消")
 
     async def shutdown(self):
-        """取消所有 worker，清理资源"""
-        for task in self._workers.values():
+        """取消所有 reader tasks"""
+        for task in self._readers.values():
             task.cancel()
-        await asyncio.gather(*self._workers.values(), return_exceptions=True)
+        if self._readers:
+            await asyncio.gather(*self._readers.values(), return_exceptions=True)
+        self._readers.clear()
 
     async def drain_all(self, timeout: float = 10):
-        """等待所有 session 队列清空，超时后强制 shutdown"""
-        if not self._queues:
+        """等待所有 reader tasks 完成（超时后强制 shutdown）"""
+        if not self._readers:
             return
         try:
             await asyncio.wait_for(
-                asyncio.gather(
-                    *(q.join() for q in self._queues.values())
-                ),
+                asyncio.gather(*self._readers.values(), return_exceptions=True),
                 timeout=timeout,
             )
         except asyncio.TimeoutError:
-            pass  # 超时后强制 shutdown
+            pass
         await self.shutdown()

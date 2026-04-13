@@ -11,7 +11,7 @@ from claude_agent_sdk import ClaudeAgentOptions
 from claude_agent_sdk.types import SystemPromptPreset
 
 from src.config import ROOT, CONFIG, PERSONA, HEADLESS_RULES, DISALLOWED_TOOLS, log_debug, log_info
-from src.handler import should_respond, handle_message, compute_session_id
+from src.handler import should_respond, send_message, session_reader, compute_session_id
 from src.metrics import MetricsCollector
 from src.notify import notify_error
 from src.permissions import permission_gate
@@ -125,7 +125,8 @@ async def main():
             log_info(f"收到消息 [{session_id}]: {event.get('content', '')[:50]}...")
             await dispatcher.dispatch(
                 session_id,
-                handle_message(pool, event, metrics=metrics),
+                send_message(pool, event, metrics=metrics),
+                reader_factory=lambda sid=session_id: session_reader(sid, pool, metrics=metrics),
             )
 
     except KeyboardInterrupt:

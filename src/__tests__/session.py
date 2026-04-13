@@ -1,4 +1,4 @@
-"""session 调度器测试"""
+"""session 调度器测试：消息直推 + reader task 管理"""
 
 import asyncio
 from unittest.mock import AsyncMock, MagicMock
@@ -13,138 +13,146 @@ def run_async(coro):
 
 
 class TestSessionDispatcher:
-    def test_dispatches_single_message(self):
-        """单条消息正常分发和执行"""
+    def test_dispatches_send_immediately(self):
+        """send_coro 立即被 await"""
         dispatcher = SessionDispatcher()
         executed = []
 
-        async def handler():
-            executed.append("a")
+        async def send():
+            executed.append("sent")
 
         async def run():
-            await dispatcher.dispatch("session_1", handler())
-            await dispatcher.drain("session_1")
+            await dispatcher.dispatch("s1", send())
 
         run_async(run())
-        assert executed == ["a"]
+        assert executed == ["sent"]
 
-    def test_same_session_processes_sequentially(self):
-        """同一 session 内消息串行处理"""
+    def test_starts_reader_on_first_message(self):
+        """首次消息启动 reader task"""
         dispatcher = SessionDispatcher()
-        order = []
+        reader_started = []
 
-        async def make_handler(label, delay=0):
-            if delay:
-                await asyncio.sleep(delay)
-            order.append(label)
+        async def send():
+            pass
+
+        async def reader():
+            reader_started.append(True)
 
         async def run():
-            await dispatcher.dispatch("s1", make_handler("first", delay=0.05))
-            await dispatcher.dispatch("s1", make_handler("second"))
-            await dispatcher.drain("s1")
+            await dispatcher.dispatch("s1", send(), reader_factory=lambda: reader())
+            # 给 reader task 时间启动
+            await asyncio.sleep(0.05)
 
         run_async(run())
-        assert order == ["first", "second"]
+        assert len(reader_started) == 1
+        # reader 已完成（mock 立即返回），自动从 _readers 清理
 
-    def test_different_sessions_run_concurrently(self):
-        """不同 session 可并发处理"""
+    def test_does_not_restart_reader(self):
+        """多次 dispatch 不重复启动 reader"""
         dispatcher = SessionDispatcher()
-        timestamps = {}
+        reader_count = []
 
-        async def make_handler(session, delay):
-            timestamps[f"{session}_start"] = asyncio.get_event_loop().time()
-            await asyncio.sleep(delay)
-            timestamps[f"{session}_end"] = asyncio.get_event_loop().time()
+        async def send():
+            pass
+
+        async def reader():
+            reader_count.append(1)
+            await asyncio.sleep(1)  # 长驻
 
         async def run():
-            await dispatcher.dispatch("s1", make_handler("s1", 0.1))
-            await dispatcher.dispatch("s2", make_handler("s2", 0.1))
-            await dispatcher.drain("s1")
-            await dispatcher.drain("s2")
-
-        run_async(run())
-        # s2 应该在 s1 完成之前就开始了（并发）
-        assert timestamps["s2_start"] < timestamps["s1_end"]
-
-    def test_handler_error_does_not_block_queue(self):
-        """handler 抛异常不阻塞后续消息"""
-        dispatcher = SessionDispatcher()
-        executed = []
-
-        async def bad_handler():
-            raise ValueError("boom")
-
-        async def good_handler():
-            executed.append("ok")
-
-        async def run():
-            await dispatcher.dispatch("s1", bad_handler())
-            await dispatcher.dispatch("s1", good_handler())
-            await dispatcher.drain("s1")
-
-        run_async(run())
-        assert executed == ["ok"]
-
-    def test_reuses_existing_worker(self):
-        """同一 session 复用已有 worker，不重复创建"""
-        dispatcher = SessionDispatcher()
-        count = []
-
-        async def handler():
-            count.append(1)
-
-        async def run():
-            await dispatcher.dispatch("s1", handler())
-            await dispatcher.dispatch("s1", handler())
-            await dispatcher.drain("s1")
-
-        run_async(run())
-        assert len(count) == 2
-        # 只有一个 worker task
-        assert len(dispatcher._workers) == 1
-
-    def test_shutdown_cancels_all_workers(self):
-        """shutdown 取消所有 worker"""
-        dispatcher = SessionDispatcher()
-
-        async def slow_handler():
-            await asyncio.sleep(10)
-
-        async def run():
-            await dispatcher.dispatch("s1", slow_handler())
+            factory = lambda: reader()
+            await dispatcher.dispatch("s1", send(), reader_factory=factory)
+            await dispatcher.dispatch("s1", send(), reader_factory=factory)
+            await asyncio.sleep(0.05)
             await dispatcher.shutdown()
 
         run_async(run())
-        assert all(t.cancelled() or t.done() for t in dispatcher._workers.values())
+        assert len(reader_count) == 1
 
-    def test_drain_all_waits_for_all_sessions(self):
-        """drain_all 等待所有 session 队列清空"""
+    def test_cancel_reader(self):
+        """cancel_reader 取消指定 session 的 reader"""
         dispatcher = SessionDispatcher()
-        executed = []
 
-        async def handler(label):
-            await asyncio.sleep(0.05)
-            executed.append(label)
+        async def send():
+            pass
+
+        async def reader():
+            await asyncio.sleep(10)
 
         async def run():
-            await dispatcher.dispatch("s1", handler("a"))
-            await dispatcher.dispatch("s2", handler("b"))
-            await dispatcher.drain_all()
+            await dispatcher.dispatch("s1", send(), reader_factory=lambda: reader())
+            await asyncio.sleep(0.05)
+            dispatcher.cancel_reader("s1")
+            await asyncio.sleep(0.05)
 
         run_async(run())
-        assert sorted(executed) == ["a", "b"]
-        assert all(t.cancelled() or t.done() for t in dispatcher._workers.values())
+        assert "s1" not in dispatcher._readers
 
-    def test_drain_all_timeout_forces_shutdown(self):
-        """drain_all 超时后强制取消 worker"""
+    def test_shutdown_cancels_all_readers(self):
+        """shutdown 取消所有 reader tasks"""
         dispatcher = SessionDispatcher()
 
-        async def stuck_handler():
-            await asyncio.sleep(100)  # 永远不会完成
+        async def send():
+            pass
+
+        async def reader():
+            await asyncio.sleep(10)
 
         async def run():
-            await dispatcher.dispatch("s1", stuck_handler())
+            await dispatcher.dispatch("s1", send(), reader_factory=lambda: reader())
+            await dispatcher.dispatch("s2", send(), reader_factory=lambda: reader())
+            await asyncio.sleep(0.05)
+            await dispatcher.shutdown()
+
+        run_async(run())
+        assert len(dispatcher._readers) == 0
+
+    def test_drain_all_timeout_forces_shutdown(self):
+        """drain_all 超时后强制取消"""
+        dispatcher = SessionDispatcher()
+
+        async def send():
+            pass
+
+        async def reader():
+            await asyncio.sleep(100)
+
+        async def run():
+            await dispatcher.dispatch("s1", send(), reader_factory=lambda: reader())
+            await asyncio.sleep(0.05)
             await dispatcher.drain_all(timeout=0.1)
 
         run_async(run())
-        assert all(t.cancelled() or t.done() for t in dispatcher._workers.values())
+        assert len(dispatcher._readers) == 0
+
+    def test_send_error_does_not_crash(self):
+        """send_coro 异常不影响 reader 启动"""
+        dispatcher = SessionDispatcher()
+        reader_started = []
+
+        async def bad_send():
+            raise ValueError("send failed")
+
+        async def reader():
+            reader_started.append(True)
+
+        async def run():
+            await dispatcher.dispatch("s1", bad_send(), reader_factory=lambda: reader())
+            await asyncio.sleep(0.05)
+            await dispatcher.shutdown()
+
+        run_async(run())
+        assert len(reader_started) == 1
+
+    def test_no_reader_factory(self):
+        """不传 reader_factory 时不启动 reader"""
+        dispatcher = SessionDispatcher()
+
+        async def send():
+            pass
+
+        async def run():
+            await dispatcher.dispatch("s1", send())
+
+        run_async(run())
+        assert "s1" not in dispatcher._readers
