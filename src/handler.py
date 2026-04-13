@@ -147,8 +147,13 @@ async def handle_message(
 
     permissions.set_sender(sender_id)
 
-    sender_label = "所有者" if sender_id == OWNER_ID else "同事"
-    prompt = f"[{sender_label}] 在{'群聊' if chat_type == 'group' else '私聊'}中说：{content}"
+    # / 开头的消息直接发给 Claude Code（可能是内置 slash command 如 /status /compact）
+    # 非 / 开头的普通消息加上发送者上下文
+    if content.startswith("/"):
+        prompt = content
+    else:
+        sender_label = "所有者" if sender_id == OWNER_ID else "同事"
+        prompt = f"[{sender_label}] 在{'群聊' if chat_type == 'group' else '私聊'}中说：{content}"
 
     session_id = compute_session_id(event)
 
