@@ -232,7 +232,7 @@ function renderConversation(messages) {
     } else if (msg.role === "tool_result") {
       el.innerHTML = renderToolResult(msg);
     } else {
-      el.innerHTML = renderGenericMessage(msg);
+      return; // 跳过未知 role，不渲染
     }
 
     container.appendChild(el);
