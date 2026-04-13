@@ -102,3 +102,15 @@ mkdir -p tasks/{日期}_{类型}-{ID}_{简述}/notes
 ```bash
 mv tasks/{目录名} tasks-finished/
 ```
+
+## 飞书知识库同步
+
+**铁律：在 `tasks/` 目录下写入任何 `.md` 文件（STATUS.md 除外）后，必须查映射表决定是否同步到 wiki。**
+
+完整流程、Wiki 配置、命令示例、文件映射表：[references/wiki-sync.md](references/wiki-sync.md)
+
+**速查**：
+- 同步的：review.md / technical-solution.md / code-review-*.md / integration-test-*.md
+- 不同步的：STATUS.md / notes/
+- 同步后 `node_token` 必须记入 STATUS.md 关联资源区
+- 飞书通知必须带 wiki URL：`https://vastai3d.feishu.cn/wiki/<node_token>`
