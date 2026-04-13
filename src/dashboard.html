@@ -63,7 +63,11 @@
 
     <!-- Session 列表 -->
     <section>
-      <h2 class="text-lg font-semibold mb-3">Session 列表</h2>
+      <div class="flex items-center justify-between mb-3">
+        <h2 class="text-lg font-semibold">Session 列表</h2>
+        <input id="session-filter" type="text" placeholder="搜索用户名、群名或 ID..."
+          oninput="renderSessions()"
+          class="px-3 py-1.5 bg-gray-800 border border-gray-600 rounded text-sm text-gray-300 placeholder-gray-500 w-64 focus:outline-none focus:border-purple-500 transition-colors" /></div>
       <div class="bg-gray-800 rounded-lg shadow-lg overflow-hidden">
         <table class="w-full text-sm">
           <thead>
@@ -185,10 +189,23 @@ async function fetchSessions() {
 
 function renderSessions() {
   const tbody = document.getElementById('session-tbody');
-  const entries = Object.entries(sessionsData);
+  var entries = Object.entries(sessionsData);
+
+  // 前端过滤
+  var filterText = (document.getElementById('session-filter').value || '').toLowerCase().trim();
+  if (filterText) {
+    entries = entries.filter(function(entry) {
+      var id = entry[0].toLowerCase();
+      var s = entry[1];
+      var senderName = (s.sender_name || '').toLowerCase();
+      var chatName = (s.chat_name || '').toLowerCase();
+      return id.indexOf(filterText) !== -1 || senderName.indexOf(filterText) !== -1 || chatName.indexOf(filterText) !== -1;
+    });
+  }
 
   if (entries.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="5" class="px-4 py-8 text-center text-gray-500">暂无活跃 Session</td></tr>';
+    var msg = filterText ? '没有匹配的 Session' : '暂无活跃 Session';
+    tbody.innerHTML = '<tr><td colspan="5" class="px-4 py-8 text-center text-gray-500">' + msg + '</td></tr>';
     return;
   }
 

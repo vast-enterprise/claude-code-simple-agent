@@ -181,6 +181,7 @@ async function loadMeta() {
     document.getElementById("meta-active").title = formatDateTime(meta.last_active);
     document.getElementById("meta-count").textContent = meta.message_count != null ? meta.message_count : "--";
     document.getElementById("meta-section").classList.remove("hidden");
+    _sessionMeta = meta;
   } catch (e) {
     // 元信息加载失败不阻断主流程
   }
@@ -404,9 +405,26 @@ async function handleCompact() {
   document.getElementById("header-session-id").textContent = sessionId;
   document.title = "Session: " + sessionId + " \u2014 Digital Avatar";
 
-  loadMeta();
+  loadMeta().then(updateHeaderWithNames);
   loadConversation();
 })();
+
+var _sessionMeta = null;
+
+function updateHeaderWithNames() {
+  if (!_sessionMeta) return;
+  var name = _sessionMeta.sender_name;
+  var chatName = _sessionMeta.chat_name;
+  if (name) {
+    var label = name;
+    if (chatName) label += " @ " + chatName;
+    else if (sessionId.startsWith("p2p_")) label += " \u79c1\u804a";
+    document.getElementById("header-session-id").innerHTML =
+      '<span class="text-lg">' + escapeHtml(label) + '</span>' +
+      '<span class="text-gray-600 text-xs font-mono ml-3">' + escapeHtml(sessionId) + '</span>';
+    document.title = label + " \u2014 Digital Avatar";
+  }
+}
 
 </script>
 </body>
