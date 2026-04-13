@@ -82,5 +82,7 @@ def run_async(coro):
 
 - **`config.py`** — 无测试（模块导入时立即执行，`config.json` 缺失直接 `sys.exit(1)`）
 - **`main.py`** — 无测试（入口脚本、事件循环、子进程生命周期管理）
-- **`lark.py`** — `add_reaction` 的 `JSONDecodeError`/`KeyError` 异常路径未覆盖
-- **`pool.py`** — `connect()` 失败后的 `disconnect()` + re-raise 路径未覆盖
+- **`lark.py`** — `add_reaction` 的 `JSONDecodeError`/`KeyError` 异常路径未覆盖；`resolve_user_name`/`resolve_chat_name` 未覆盖
+- **`pool.py`** — `connect()` 失败后的 `disconnect()` + re-raise 路径未覆盖；`--resume` 路径未覆盖
+- **`server.py`** — `_parse_session_log` / conversation API 未覆盖
+- **`handler.py`** — `_ensure_display_names`、`/clear` 自行处理、slash command 透传逻辑未覆盖

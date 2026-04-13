@@ -18,8 +18,8 @@
 ### architecture/
 | 文档 | 说明 |
 |------|------|
-| [event-pipeline.md](architecture/event-pipeline.md) | 事件驱动管道、多进程池模型（ClientPool）、进程生命周期 |
-| [observability.md](architecture/observability.md) | 可观测性体系：异常通知、session 持久化、指标收集、HTTP API、Dashboard、飞书指令 |
+| [event-pipeline.md](architecture/event-pipeline.md) | 事件驱动管道、多进程池模型（ClientPool）、进程生命周期、slash command 透传、session resume |
+| [observability.md](architecture/observability.md) | 可观测性体系：异常通知、session 持久化、指标收集、HTTP API、Dashboard、Session 详情页、Conversation API、名字解析 |
 | [lark-interaction.md](architecture/lark-interaction.md) | 飞书交互层：消息回复、表情反馈、事件订阅 |
 | [permission-model.md](architecture/permission-model.md) | 双层权限模型：代码强制 + prompt 约束 |
 | [persona-system.md](architecture/persona-system.md) | 人格注入机制、边界规则、OKR |

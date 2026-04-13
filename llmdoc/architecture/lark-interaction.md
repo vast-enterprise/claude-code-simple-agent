@@ -7,9 +7,9 @@
 
 ## 2. Core Components
 
-- `src/lark.py` (`add_reaction`, `remove_reaction`, `reply_message`): 飞书 API 交互的唯一出口，全部为同步阻塞调用，无内部依赖（叶节点模块）。
+- `src/lark.py` (`add_reaction`, `remove_reaction`, `reply_message`, `resolve_user_name`, `resolve_chat_name`): 飞书 API 交互的唯一出口，全部为同步阻塞调用，无内部依赖（叶节点模块）。新增名字解析函数。
 - `src/main.py` (`start_event_listener`): 启动 `lark-cli event +subscribe` 长驻子进程，以 NDJSON 格式输出事件流。
-- `src/handler.py` (`handle_message`): 消费端，在消息处理流程中调用 `lark.py` 的三个函数完成表情反馈和消息回复。
+- `src/handler.py` (`handle_message`, `_ensure_display_names`): 消费端，在消息处理流程中调用 `lark.py` 的函数完成表情反馈、消息回复和名字解析。
 
 ## 3. Execution Flow (LLM Retrieval Map)
 
@@ -53,9 +53,18 @@
 - **stdout**: `asyncio.subprocess.PIPE`，主循环逐行读取。
 - **stderr**: `asyncio.subprocess.DEVNULL`，丢弃。
 
+### 3.5 名字解析
+
+通过 lark-cli 将飞书 ID 解析为可读名字，用于 Dashboard 显示：
+
+- **用户名解析:** `src/lark.py:43-55` — `resolve_user_name(open_id)` 调用 `lark-cli contact +get-user --user-id {open_id} --user-id-type open_id -q .data.user.name`，返回用户名或 None。
+- **群名解析:** `src/lark.py:58-70` — `resolve_chat_name(chat_id)` 调用 `lark-cli im chats get --params {"chat_id": chat_id} -q .data.name`，返回群名或 None。
+- **触发时机:** `src/handler.py:49-72` — `_ensure_display_names()` 检查 store 中是否已有 `sender_name`，没有则解析并存入。仅首次触发，后续复用 store 数据。
+
 ## 4. Design Rationale
 
 - **为什么用 lark-cli 而非直接 HTTP**: 认证、token 刷新、WebSocket 长连接管理全部由 lark-cli 处理，应用层只需关注业务逻辑。
 - **为什么同步调用**: lark-cli 调用耗时极短（毫秒级），同步 `subprocess.run` 足够且更简单。在多 session 并发架构下，每个 worker 的短暂阻塞影响有限。
 - **为什么静默降级**: 表情和回复失败不应阻断主流程，避免因飞书 API 抖动导致整个消息处理链中断。
 - **4000 字符截断**: 飞书文本消息 API 的长度限制约束，硬截断是 MVP 阶段的简单方案，后续可改为分段发送或 Markdown 卡片。
+- **名字解析惰性执行**: 仅首次遇到 session 时调用 lark-cli 解析用户名和群名，结果持久化到 SessionStore，避免每条消息都触发 API 调用。

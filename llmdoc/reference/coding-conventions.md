@@ -8,7 +8,7 @@
 
 ## 2. 模块组织
 
-- 源码位于 `src/`，每个模块一个文件，职责单一（config / lark / permissions / handler / pool / session / main / notify / store / metrics / server）
+- 源码位于 `src/`，每个模块一个文件，职责单一（config / lark / permissions / handler / pool / session / main / notify / store / metrics / server）+ 两个前端页面（dashboard.html / session.html）
 - 测试位于 `src/__tests__/`，与 `src/` 同级 colocated，文件名与被测模块一致
 - `src/__init__.py` 和 `src/__tests__/__init__.py` 均为空包标记文件
 - 配置：`pyproject.toml` (`[tool.pytest.ini_options]`) — `testpaths = ["src/__tests__"]`, `pythonpath = ["."]`

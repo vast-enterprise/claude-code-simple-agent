@@ -8,7 +8,7 @@
 ## 2. Core Components
 
 - `src/permissions.py` (`permission_gate`, `set_sender`, `get_sender`, `_current_sender_id`, `SENSITIVE`): 运行时权限门控，唯一的代码强制执行点。`_current_sender_id` 为 `contextvars.ContextVar`，支持并发隔离。
-- `src/handler.py` (`handle_message`, `compute_session_id`): 调用 `permissions.set_sender(sender_id)` 写入 contextvars，构造带 `[所有者]`/`[同事]` 角色标签的 prompt。
+- `src/handler.py` (`handle_message`, `compute_session_id`): 调用 `permissions.set_sender(sender_id)` 写入 contextvars。普通消息构造带 `[所有者]`/`[同事]` 角色标签的 prompt；`/` 开头的 slash commands 原样透传不加标签。
 - `src/main.py` (`main`): 构造 `ClaudeAgentOptions`（含 `permission_gate` 为 `can_use_tool` 回调、`permission_mode="bypassPermissions"`、`disallowed_tools`），传入 `ClientPool(options)`。Pool 为每个 session 惰性创建 client 时使用相同的 options。
 - `src/config.py` (`OWNER_ID`, `HEADLESS_RULES`, `DISALLOWED_TOOLS`): 从 `config.json` 的 `owner_open_id` 字段加载所有者身份；`HEADLESS_RULES` 定义 headless 模式运行约束；`DISALLOWED_TOOLS` 硬编码禁用交互式工具（AskUserQuestion、ExitPlanMode、EnterPlanMode）。
 - `persona.md` (权限规则章节): prompt 层权限定义——所有者全权，同事只读+非敏感。

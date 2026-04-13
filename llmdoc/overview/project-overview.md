@@ -11,7 +11,7 @@
 
 核心产物 `tripo-avatar` 是一个 Python 异步服务，通过 `lark-cli` 订阅飞书消息事件，经过滤后交由 Claude Code SDK 处理，实现"数字分身"自动回复。架构为多进程池模型——`ClientPool` 为每个 session 惰性创建独立 `ClaudeSDKClient`（独立 Claude 子进程），不同 session 并行，同一 session 内消息串行。所有飞书交互通过 `lark-cli` subprocess 完成。
 
-系统内置可观测性体系：`SessionStore` 将 session 映射持久化到磁盘（原子写入），支持重启后 session resume；`MetricsCollector` 在内存中跟踪运行时指标和最近 200 条消息摘要；`aiohttp` HTTP API（端口 8420）暴露状态、session 管理端点和单文件 Dashboard；`notify` 模块在进程崩溃或断连时推送飞书异常通知（60 秒同类防风暴）。飞书端支持 `/status`、`/sessions`、`/clear`、`/compact` 指令直接查询和管理。
+系统内置可观测性体系：`SessionStore` 将 session 映射持久化到磁盘（原子写入），支持重启后 session resume（Pool 层通过 `--resume` 参数恢复 Claude 子进程上下文）；`MetricsCollector` 在内存中跟踪运行时指标和最近 200 条消息摘要；`aiohttp` HTTP API（端口 8420）暴露状态、session 管理端点、Dashboard 和独立 Session 详情页（通过解析 Claude JSONL 日志展示完整对话时间线）；`notify` 模块在进程崩溃或断连时推送飞书异常通知（60 秒同类防风暴）。飞书端仅保留 `/clear` 指令由 handler 自行处理，其他 slash commands（`/compact`、`/model` 等）直接透传给 Claude Code。
 
 ## 3. 技术栈
 
@@ -31,16 +31,17 @@ tripo-work-center/
 ├── src/
 │   ├── main.py          # 入口：事件循环、进程管理、信号处理、崩溃通知、HTTP server 启动
 │   ├── pool.py          # ClientPool：per-session 独立 client 池 + SessionStore 集成 + session resume
-│   ├── handler.py       # 消息过滤 + 飞书指令解析（/clear /compact /sessions /status）+ metrics 集成
+│   ├── handler.py       # 消息过滤 + /clear 处理 + slash command 透传 + 名字解析 + metrics 集成
 │   ├── session.py       # 并发调度器（SessionDispatcher）：per-session 队列 + worker
 │   ├── permissions.py   # 工具调用权限门控（permission_gate），contextvars 隔离
-│   ├── lark.py          # 飞书交互封装（reaction、reply）
+│   ├── lark.py          # 飞书交互封装（reaction、reply、用户名/群名解析）
 │   ├── config.py        # 配置加载 + 结构化日志 + NOTIFY_CONFIG
 │   ├── notify.py        # 飞书异常通知，60 秒同类防风暴
 │   ├── store.py         # Session 映射持久化（data/sessions.json），原子写入
 │   ├── metrics.py       # 内存指标收集器，环形缓冲存最近 200 条消息摘要
-│   ├── server.py        # aiohttp HTTP API server（端口 8420），Dashboard + REST 端点
-│   ├── dashboard.html   # 单文件管理后台（暗色主题，Tailwind CDN，30 秒轮询）
+│   ├── server.py        # aiohttp HTTP API server（端口 8420），Dashboard + Session 详情页 + REST 端点 + Conversation API
+│   ├── dashboard.html   # 管理后台（暗色主题，Tailwind CDN，搜索过滤，session 链接到详情页）
+│   ├── session.html     # Session 详情页（对话时间线，工具调用折叠展示）
 │   └── __tests__/       # 单元测试
 ├── persona.md           # 数字分身人格定义，注入 system_prompt
 ├── config.example.json  # 配置模板（owner_id、模型参数、API 环境变量）
@@ -67,7 +68,7 @@ pool.py ──→ config.py（log_debug, log_error）
    │
 handler.py ──→ config.py（OWNER_ID, BOT_NAME, log_debug）
    │──→ pool.py（ClientPool）
-   │──→ lark.py（add_reaction, remove_reaction, reply_message）
+   │──→ lark.py（add_reaction, remove_reaction, reply_message, resolve_user_name, resolve_chat_name）
    │──→ permissions（set_sender）
    │──→ metrics.py（MetricsCollector — record_message）
    │
@@ -85,6 +86,6 @@ config.py ──→ 无内部依赖（叶节点）
 
 ## 6. 数据流概要
 
-`lark-cli stdout (NDJSON)` → `main.py` 逐行读取解析（`_read_or_shutdown` 多路复用）→ `should_respond` 过滤 → `compute_session_id` 计算会话标识 → `SessionDispatcher.dispatch` 分发到 per-session 队列 → `handle_message(pool, event, metrics=metrics)` 检测飞书指令（`/clear` 等直接处理）→ 非指令消息从 `ClientPool` 获取独立 client（`SessionStore` 持久化 + Claude session_id resume）→ 组装 prompt 并调用 Claude SDK → `permission_gate` 拦截敏感工具调用 → `lark.reply_message` 回复飞书 → `MetricsCollector.record_message` 记录指标（try/finally 确保异常也计入）。
+`lark-cli stdout (NDJSON)` → `main.py` 逐行读取解析（`_read_or_shutdown` 多路复用）→ `should_respond` 过滤 → `compute_session_id` 计算会话标识 → `SessionDispatcher.dispatch` 分发到 per-session 队列 → `handle_message(pool, event, metrics=metrics)` 处理（`/clear` 自行处理，`/` 开头 slash commands 原样透传给 Claude Code，普通消息加发送者上下文前缀）→ `_ensure_display_names` 首次解析并存储 sender_name/chat_name → `ClientPool.get` 获取独立 client（惰性创建时自动 `--resume` 恢复 session）→ 组装 prompt 并调用 Claude SDK → `permission_gate` 拦截敏感工具调用 → `lark.reply_message` 回复飞书 → `MetricsCollector.record_message` 记录指标（try/finally 确保异常也计入）。
 
-并行运行：`aiohttp` HTTP server（端口 8420）提供 `/api/status`、`/api/sessions` 等端点和 Dashboard UI；`notify` 在崩溃/断连时推送飞书通知。
+并行运行：`aiohttp` HTTP server（端口 8420）提供 REST 端点、Dashboard UI、Session 详情页和 Conversation API（解析 Claude JSONL 日志）；`notify` 在崩溃/断连时推送飞书通知。
