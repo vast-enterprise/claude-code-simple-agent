@@ -346,13 +346,6 @@ function renderToolResult(msg) {
   '</div>';
 }
 
-function renderGenericMessage(msg) {
-  return '<div class="bg-gray-800/50 border border-gray-700 rounded-lg px-4 py-3">' +
-    '<div class="text-xs text-gray-500 mb-1">' + escapeHtml(msg.role) + ' \u00b7 ' + escapeHtml(formatTime(msg.timestamp)) + '</div>' +
-    '<div class="text-gray-300 text-sm whitespace-pre-wrap">' + escapeHtml(msg.content || JSON.stringify(msg)) + '</div>' +
-  '</div>';
-}
-
 // ── 操作按钮 ──────────────────────────────────────────
 
 async function handleClear() {
