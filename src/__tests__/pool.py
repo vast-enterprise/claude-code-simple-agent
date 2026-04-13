@@ -127,7 +127,7 @@ class TestClientPoolWithStore:
         store = MagicMock()
         store.save = MagicMock()
         store.update_active = MagicMock()
-        store.remove = MagicMock(return_value=True)
+        store.remove = MagicMock(side_effect=lambda sid: sid in ("s1", "s2"))
         store.load_all = MagicMock(return_value={"s1": {"message_count": 3}, "s2": {"message_count": 1}})
         return store
 

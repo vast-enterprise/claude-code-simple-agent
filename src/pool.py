@@ -78,23 +78,24 @@ class ClientPool:
             self._locks[session_id] = asyncio.Lock()
 
         async with self._locks[session_id]:
-            if session_id not in self._clients:
-                return False
+            client = self._clients.pop(session_id, None)
 
-            client = self._clients.pop(session_id)
+            if client:
+                try:
+                    await client.disconnect()
+                except Exception as e:
+                    log_error(f"disconnect {session_id} 失败: {e}")
 
-            try:
-                await client.disconnect()
-            except Exception as e:
-                log_error(f"disconnect {session_id} 失败: {e}")
-
+            store_removed = False
             if self._store:
-                self._store.remove(session_id)
+                store_removed = self._store.remove(session_id)
 
-            log_debug(f"已移除 client: {session_id}")
+            removed = client is not None or store_removed
+            if removed:
+                log_debug(f"已移除 session: {session_id}")
 
         self._locks.pop(session_id, None)
-        return True
+        return removed
 
     def list_sessions(self) -> dict:
         """返回 store 中所有 session 数据。无 store 时返回空 dict。"""
