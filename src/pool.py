@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import dataclasses
 from typing import TYPE_CHECKING
 
 from claude_agent_sdk import ClaudeSDKClient, ClaudeAgentOptions
@@ -40,7 +41,14 @@ class ClientPool:
 
         async with self._locks[session_id]:
             if session_id not in self._clients:
-                client = ClaudeSDKClient(options=self._options)
+                # 如果 store 中有历史 claude_session_id，用 --resume 恢复
+                opts = self._options
+                stored_sid = self.get_claude_session_id(session_id)
+                if stored_sid:
+                    opts = dataclasses.replace(self._options, resume=stored_sid)
+                    log_debug(f"resume session: {session_id} → {stored_sid}")
+
+                client = ClaudeSDKClient(options=opts)
                 try:
                     await client.connect()
                 except Exception:
