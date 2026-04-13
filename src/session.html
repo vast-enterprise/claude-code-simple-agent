@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Session Detail — Digital Avatar</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body { font-family: 'Inter', system-ui, -apple-system, sans-serif; }
+    .fade-in { animation: fadeIn 0.3s ease-in; }
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+    .spin { animation: spin 1s linear infinite; }
+    @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+    details > summary { list-style: none; }
+    details > summary::-webkit-details-marker { display: none; }
+    details[open] > summary .chevron { transform: rotate(90deg); }
+    .chevron { transition: transform 0.2s ease; display: inline-block; }
+  </style>
+</head>
+<body class="bg-gray-900 text-gray-100 min-h-screen">
+
+  <!-- 顶部导航栏 -->
+  <header class="bg-gray-800 border-b border-gray-700 px-6 py-4 flex items-center justify-between">
+    <div class="flex items-center gap-4">
+      <a href="/" class="text-gray-400 hover:text-white transition-colors text-sm flex items-center gap-1">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
+        </svg>
+        返回 Dashboard
+      </a>
+      <span class="text-gray-600">|</span>
+      <h1 id="header-session-id" class="text-base font-bold font-mono text-purple-400 tracking-tight">--</h1>
+    </div>
+    <div class="flex items-center gap-2">
+      <button onclick="handleClear()" id="btn-clear"
+        class="px-3 py-1.5 text-xs bg-red-600 hover:bg-red-500 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+        Clear
+      </button>
+      <button onclick="handleCompact()" id="btn-compact"
+        class="px-3 py-1.5 text-xs bg-yellow-600 hover:bg-yellow-500 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+        Compact
+      </button>
+    </div>
+  </header>
+
+  <main class="max-w-5xl mx-auto px-4 sm:px-6 py-6 space-y-6">
+
+    <!-- Session 元信息卡片 -->
+    <section id="meta-section" class="hidden">
+      <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        <div class="bg-gray-800 rounded-lg p-4 border border-gray-700">
+          <div class="text-xs text-gray-500 mb-1">创建时间</div>
+          <div id="meta-created" class="text-sm text-gray-300 font-mono">--</div>
+        </div>
+        <div class="bg-gray-800 rounded-lg p-4 border border-gray-700">
+          <div class="text-xs text-gray-500 mb-1">最后活跃</div>
+          <div id="meta-active" class="text-sm text-gray-300 font-mono">--</div>
+        </div>
+        <div class="bg-gray-800 rounded-lg p-4 border border-gray-700">
+          <div class="text-xs text-gray-500 mb-1">消息数</div>
+          <div id="meta-count" class="text-sm text-gray-300 font-mono">--</div>
+        </div>
+        <div class="bg-gray-800 rounded-lg p-4 border border-gray-700">
+          <div class="text-xs text-gray-500 mb-1">Claude Session ID</div>
+          <details class="group">
+            <summary class="cursor-pointer text-sm text-gray-500 hover:text-gray-300 transition-colors">
+              <span class="chevron">&#9656;</span> 点击展开
+            </summary>
+            <div id="meta-claude-sid" class="mt-1 text-xs text-gray-400 font-mono break-all">--</div>
+          </details>
+        </div>
+      </div>
+    </section>
+
+    <!-- 加载状态 -->
+    <div id="state-loading" class="text-center py-16">
+      <svg class="w-8 h-8 spin inline-block text-gray-500 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+          d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+      </svg>
+      <p class="text-gray-500">加载对话记录...</p>
+    </div>
+
+    <!-- 错误状态 -->
+    <div id="state-error" class="hidden text-center py-16">
+      <p class="text-red-400 text-lg mb-2" id="error-message">加载失败</p>
+      <button onclick="loadConversation()"
+        class="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded text-sm text-gray-300 transition-colors">
+        重试
+      </button>
+    </div>
+
+    <!-- 无 ID 参数 -->
+    <div id="state-no-id" class="hidden text-center py-16">
+      <p class="text-yellow-400 text-lg mb-2">缺少 Session ID</p>
+      <p class="text-gray-500 text-sm mb-4">请通过 URL 参数 <code class="bg-gray-800 px-1 rounded">?id=session_id</code> 指定 Session</p>
+      <a href="/" class="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded text-sm text-gray-300 transition-colors inline-block">
+        返回 Dashboard
+      </a>
+    </div>
+
+    <!-- 空状态 -->
+    <div id="state-empty" class="hidden text-center py-16">
+      <p class="text-gray-500 text-lg">暂无对话记录</p>
+    </div>
+
+    <!-- 对话时间线 -->
+    <section id="conversation-timeline" class="hidden space-y-4">
+    </section>
+
+  </main>
+
+<script>
+// ── 工具函数 ──────────────────────────────────────────
+
+function escapeHtml(str) {
+  var div = document.createElement("div");
+  div.textContent = String(str != null ? str : "");
+  return div.innerHTML;
+}
+
+function formatTime(isoString) {
+  if (!isoString) return "--";
+  var d = new Date(isoString);
+  return d.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+}
+
+function formatDateTime(isoString) {
+  if (!isoString) return "--";
+  return new Date(isoString).toLocaleString("zh-CN", {
+    year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", second: "2-digit"
+  });
+}
+
+function relativeTime(isoString) {
+  if (!isoString) return "--";
+  var diff = Math.max(0, Date.now() - new Date(isoString).getTime());
+  var seconds = Math.floor(diff / 1000);
+  if (seconds < 60) return "\u521a\u521a";
+  var minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return minutes + " \u5206\u949f\u524d";
+  var hours = Math.floor(minutes / 60);
+  if (hours < 24) return hours + " \u5c0f\u65f6\u524d";
+  var days = Math.floor(hours / 24);
+  if (days < 30) return days + " \u5929\u524d";
+  return new Date(isoString).toLocaleDateString("zh-CN");
+}
+
+function jsonPretty(obj) {
+  try {
+    return JSON.stringify(obj, null, 2);
+  } catch (e) {
+    return String(obj);
+  }
+}
+
+// ── 状态管理 ──────────────────────────────────────────
+
+var sessionId = new URLSearchParams(window.location.search).get("id");
+
+function showState(stateId) {
+  ["state-loading", "state-error", "state-no-id", "state-empty", "conversation-timeline"].forEach(function(id) {
+    document.getElementById(id).classList.add("hidden");
+  });
+  document.getElementById(stateId).classList.remove("hidden");
+}
+
+// ── 元信息加载 ────────────────────────────────────────
+
+async function loadMeta() {
+  try {
+    var res = await fetch("/api/sessions");
+    if (!res.ok) return;
+    var sessions = await res.json();
+    var meta = sessions[sessionId];
+    if (!meta) return;
+
+    document.getElementById("meta-created").textContent = formatDateTime(meta.created_at);
+    document.getElementById("meta-active").textContent = relativeTime(meta.last_active);
+    document.getElementById("meta-active").title = formatDateTime(meta.last_active);
+    document.getElementById("meta-count").textContent = meta.message_count != null ? meta.message_count : "--";
+    document.getElementById("meta-section").classList.remove("hidden");
+  } catch (e) {
+    // 元信息加载失败不阻断主流程
+  }
+}
+
+// ── 对话加载 ──────────────────────────────────────────
+
+async function loadConversation() {
+  showState("state-loading");
+
+  try {
+    var res = await fetch("/api/sessions/" + encodeURIComponent(sessionId) + "/conversation");
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    var data = await res.json();
+
+    if (data.claude_session_id) {
+      document.getElementById("meta-claude-sid").textContent = data.claude_session_id;
+    }
+
+    var messages = data.messages;
+    if (!messages || messages.length === 0) {
+      showState("state-empty");
+      return;
+    }
+
+    renderConversation(messages);
+    showState("conversation-timeline");
+  } catch (err) {
+    document.getElementById("error-message").textContent = "\u52a0\u8f7d\u5931\u8d25\uff1a" + escapeHtml(err.message);
+    showState("state-error");
+  }
+}
+
+// ── 对话渲染 ──────────────────────────────────────────
+
+function renderConversation(messages) {
+  var container = document.getElementById("conversation-timeline");
+  container.innerHTML = "";
+
+  messages.forEach(function(msg) {
+    var el = document.createElement("div");
+    el.className = "fade-in";
+
+    if (msg.role === "user") {
+      el.innerHTML = renderUserMessage(msg);
+    } else if (msg.role === "assistant") {
+      el.innerHTML = renderAssistantMessage(msg);
+    } else if (msg.role === "tool_result") {
+      el.innerHTML = renderToolResult(msg);
+    } else {
+      el.innerHTML = renderGenericMessage(msg);
+    }
+
+    container.appendChild(el);
+  });
+}
+
+function renderUserMessage(msg) {
+  return '<div class="flex justify-start">' +
+    '<div class="bg-blue-900/40 border border-blue-700/30 rounded-lg px-4 py-3 max-w-3xl">' +
+      '<div class="text-xs text-gray-400 mb-1">\u7528\u6237 \u00b7 ' + escapeHtml(formatTime(msg.timestamp)) + '</div>' +
+      '<div class="text-gray-200 whitespace-pre-wrap">' + escapeHtml(msg.content) + '</div>' +
+    '</div>' +
+  '</div>';
+}
+
+function renderAssistantMessage(msg) {
+  var blocks = msg.blocks || [];
+  var blocksHtml = blocks.map(function(block) {
+    if (block.type === "text") {
+      return renderTextBlock(block);
+    } else if (block.type === "tool_use") {
+      return renderToolUseBlock(block);
+    } else {
+      return '<div class="text-gray-400 text-sm">[' + escapeHtml(block.type) + ']</div>';
+    }
+  }).join("");
+
+  // 兼容简单格式：无 blocks 但有 content
+  if (blocks.length === 0 && msg.content) {
+    blocksHtml = '<div class="text-gray-200 whitespace-pre-wrap">' + escapeHtml(msg.content) + '</div>';
+  }
+
+  return '<div class="flex justify-start">' +
+    '<div class="bg-gray-800 border border-gray-700 rounded-lg px-4 py-3 max-w-4xl w-full">' +
+      '<div class="text-xs text-gray-400 mb-1">Claude \u00b7 ' + escapeHtml(formatTime(msg.timestamp)) + '</div>' +
+      blocksHtml +
+    '</div>' +
+  '</div>';
+}
+
+function renderTextBlock(block) {
+  var text = block.text || "";
+  if (text.indexOf("```") !== -1) {
+    return renderTextWithCodeBlocks(text);
+  }
+  return '<div class="text-gray-200 whitespace-pre-wrap">' + escapeHtml(text) + '</div>';
+}
+
+function renderTextWithCodeBlocks(text) {
+  var marker = "```";
+  var parts = text.split(new RegExp("(" + marker + "[\\s\\S]*?" + marker + ")", "g"));
+  return parts.map(function(part) {
+    if (part.startsWith(marker) && part.endsWith(marker)) {
+      var inner = part.slice(3, -3);
+      var firstNewline = inner.indexOf("\n");
+      var lang = "";
+      var code = inner;
+      if (firstNewline !== -1) {
+        lang = inner.substring(0, firstNewline).trim();
+        code = inner.substring(firstNewline + 1);
+      }
+      var langLabel = lang ? '<span class="text-xs text-gray-500 mb-1 block">' + escapeHtml(lang) + '</span>' : "";
+      return '<div class="mt-2 mb-2 bg-gray-900 rounded-lg p-3 overflow-x-auto border border-gray-700">' +
+        langLabel +
+        '<pre class="text-sm text-gray-300 whitespace-pre-wrap"><code>' + escapeHtml(code) + '</code></pre>' +
+      '</div>';
+    }
+    return '<div class="text-gray-200 whitespace-pre-wrap">' + escapeHtml(part) + '</div>';
+  }).join("");
+}
+
+function renderToolUseBlock(block) {
+  var toolName = block.name || "Unknown Tool";
+  var inputStr = block.input ? jsonPretty(block.input) : "{}";
+  var toolId = block.id ? '<span class="text-xs text-gray-600 ml-2 font-mono">' + escapeHtml(block.id) + '</span>' : "";
+
+  return '<details class="mt-2 bg-gray-700/30 rounded-lg border border-gray-600/30 overflow-hidden">' +
+    '<summary class="cursor-pointer px-3 py-2 text-sm text-yellow-400 hover:bg-gray-700/50 transition-colors flex items-center gap-2">' +
+      '<span class="chevron text-xs">&#9656;</span>' +
+      '<span>&#128295; ' + escapeHtml(toolName) + '</span>' +
+      toolId +
+    '</summary>' +
+    '<div class="px-3 py-2 border-t border-gray-600/30 bg-gray-800/50">' +
+      '<pre class="text-xs text-gray-300 overflow-x-auto whitespace-pre-wrap">' + escapeHtml(inputStr) + '</pre>' +
+    '</div>' +
+  '</details>';
+}
+
+function renderToolResult(msg) {
+  var content = msg.content || "";
+  var isError = msg.is_error === true;
+  var statusIcon = isError ? "&#10007;" : "&#10003;";
+  var statusText = isError ? "\u6267\u884c\u5931\u8d25" : "\u5de5\u5177\u6267\u884c\u7ed3\u679c";
+  var statusColor = isError ? "text-red-400" : "text-green-400";
+  var borderColor = isError ? "border-red-600/30" : "border-gray-600/30";
+  var toolIdLabel = msg.tool_use_id
+    ? '<span class="text-xs text-gray-600 ml-2 font-mono">' + escapeHtml(msg.tool_use_id) + '</span>'
+    : "";
+
+  return '<div class="ml-4">' +
+    '<details class="bg-gray-700/20 rounded-lg border ' + borderColor + ' overflow-hidden">' +
+      '<summary class="cursor-pointer px-3 py-2 text-sm ' + statusColor + ' hover:bg-gray-700/30 transition-colors flex items-center gap-2">' +
+        '<span class="chevron text-xs">&#9656;</span>' +
+        '<span>' + statusIcon + ' ' + statusText + '</span>' +
+        toolIdLabel +
+      '</summary>' +
+      '<div class="px-3 py-2 border-t border-gray-600/30 bg-gray-800/50">' +
+        '<pre class="text-xs text-gray-300 overflow-x-auto whitespace-pre-wrap max-h-96 overflow-y-auto">' + escapeHtml(content) + '</pre>' +
+      '</div>' +
+    '</details>' +
+  '</div>';
+}
+
+function renderGenericMessage(msg) {
+  return '<div class="bg-gray-800/50 border border-gray-700 rounded-lg px-4 py-3">' +
+    '<div class="text-xs text-gray-500 mb-1">' + escapeHtml(msg.role) + ' \u00b7 ' + escapeHtml(formatTime(msg.timestamp)) + '</div>' +
+    '<div class="text-gray-300 text-sm whitespace-pre-wrap">' + escapeHtml(msg.content || JSON.stringify(msg)) + '</div>' +
+  '</div>';
+}
+
+// ── 操作按钮 ──────────────────────────────────────────
+
+async function handleClear() {
+  if (!confirm('\u786e\u8ba4\u6e05\u9664 Session "' + sessionId + '" \u7684\u6d88\u606f\u5386\u53f2\uff1f\u6b64\u64cd\u4f5c\u4e0d\u53ef\u64a4\u9500\u3002')) return;
+  var btn = document.getElementById("btn-clear");
+  btn.disabled = true;
+  try {
+    var res = await fetch("/api/sessions/" + encodeURIComponent(sessionId) + "/clear", { method: "POST" });
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    var data = await res.json();
+    if (data.ok) {
+      alert("Session \u5df2\u6e05\u9664");
+      window.location.href = "/";
+    } else {
+      alert("\u6e05\u9664\u5931\u8d25\uff1a" + (data.message || "\u672a\u77e5\u9519\u8bef"));
+    }
+  } catch (err) {
+    alert("\u8bf7\u6c42\u5931\u8d25\uff1a" + err.message);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function handleCompact() {
+  if (!confirm('\u786e\u8ba4\u538b\u7f29 Session "' + sessionId + '" \u7684\u4f1a\u8bdd\u5386\u53f2\uff1f\u5386\u53f2\u5c06\u88ab\u6458\u8981\u5316\u3002')) return;
+  var btn = document.getElementById("btn-compact");
+  btn.disabled = true;
+  try {
+    var res = await fetch("/api/sessions/" + encodeURIComponent(sessionId) + "/compact", { method: "POST" });
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    var data = await res.json();
+    alert(data.message || (data.ok ? "\u538b\u7f29\u6210\u529f" : "\u538b\u7f29\u5931\u8d25"));
+    if (data.ok) loadConversation();
+  } catch (err) {
+    alert("\u8bf7\u6c42\u5931\u8d25\uff1a" + err.message);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// ── 初始化 ────────────────────────────────────────────
+
+(function init() {
+  if (!sessionId) {
+    showState("state-no-id");
+    document.title = "Session \u2014 \u7f3a\u5c11 ID";
+    return;
+  }
+
+  document.getElementById("header-session-id").textContent = sessionId;
+  document.title = "Session: " + sessionId + " \u2014 Digital Avatar";
+
+  loadMeta();
+  loadConversation();
+})();
+
+</script>
+</body>
+</html>
