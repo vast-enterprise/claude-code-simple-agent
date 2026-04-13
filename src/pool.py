@@ -1,11 +1,17 @@
 """Client 池：per-session 独立 ClaudeSDKClient，真正的会话隔离"""
 
+from __future__ import annotations
+
 import asyncio
 import contextlib
+from typing import TYPE_CHECKING
 
 from claude_agent_sdk import ClaudeSDKClient, ClaudeAgentOptions
 
 from src.config import log_debug, log_error
+
+if TYPE_CHECKING:
+    from src.store import SessionStore
 
 
 class ClientPool:
@@ -14,12 +20,16 @@ class ClientPool:
     每个 session_id 对应一个独立的 ClaudeSDKClient（独立 claude 子进程），
     实现真正的会话上下文隔离。惰性创建，首次使用时 connect。
 
+    可选接受 SessionStore 实例，在创建/删除 client 时同步持久化 session 映射。
+    store 为 None 时所有持久化操作静默跳过（向后兼容）。
+
     TODO: 当前 client 只增不减，每个新 session 常驻一个 claude 子进程。
     用户量大时需要加 idle timeout 回收不活跃的 client。
     """
 
-    def __init__(self, options: ClaudeAgentOptions):
+    def __init__(self, options: ClaudeAgentOptions, *, store: SessionStore | None = None):
         self._options = options
+        self._store = store
         self._clients: dict[str, ClaudeSDKClient] = {}
         self._locks: dict[str, asyncio.Lock] = {}
 
@@ -39,7 +49,49 @@ class ClientPool:
                     raise
                 self._clients[session_id] = client
                 log_debug(f"新建 client: {session_id}")
-            return self._clients[session_id]
+                if self._store:
+                    self._store.save(session_id, {})
+
+        # update_active 在锁外调用：即使是复用已有 client 也要更新活跃时间
+        if self._store:
+            self._store.update_active(session_id)
+
+        return self._clients[session_id]
+
+    async def remove(self, session_id: str) -> bool:
+        """断开指定 session 的 client 并从 store 中删除。
+
+        Returns:
+            True 如果 session 存在且已移除，False 如果 session 不存在。
+        """
+        if session_id not in self._clients:
+            return False
+
+        client = self._clients.pop(session_id)
+        self._locks.pop(session_id, None)
+
+        try:
+            await client.disconnect()
+        except Exception as e:
+            log_error(f"disconnect {session_id} 失败: {e}")
+
+        if self._store:
+            self._store.remove(session_id)
+
+        log_debug(f"已移除 client: {session_id}")
+        return True
+
+    def list_sessions(self) -> dict:
+        """返回 store 中所有 session 数据。无 store 时返回空 dict。"""
+        if self._store:
+            return self._store.load_all()
+        return {}
+
+    def session_ids(self) -> set[str]:
+        """返回 store 中所有 session_id。无 store 时返回空 set。"""
+        if self._store:
+            return set(self._store.load_all().keys())
+        return set()
 
     async def shutdown(self):
         """断开所有 client"""

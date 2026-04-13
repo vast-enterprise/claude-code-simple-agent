@@ -14,6 +14,7 @@ from src.handler import should_respond, handle_message, compute_session_id
 from src.permissions import permission_gate
 from src.pool import ClientPool
 from src.session import SessionDispatcher
+from src.store import SessionStore
 
 # 优雅关闭信号
 _shutdown = asyncio.Event()
@@ -76,7 +77,8 @@ async def main():
     listener = await start_event_listener()
     log_info("飞书事件监听已启动，等待消息...")
 
-    pool = ClientPool(options)
+    store = SessionStore(ROOT / "data" / "sessions.json")
+    pool = ClientPool(options, store=store)
     dispatcher = SessionDispatcher()
 
     loop = asyncio.get_running_loop()
