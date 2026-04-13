@@ -28,11 +28,21 @@ description: |
 | fe-tripo-homepage | `staging.yaml` | `production.yaml` |
 | tripo-cms | `deploy-staging.yml` | `deploy-production.yml` |
 
-## 共同前置条件
+## 执行入口
+
+```
+用户说"部署"/"发版"/"上线":
+  1. 确认目标仓库（未明确 → AskUserQuestion）
+  2. 确认目标环境（未明确 → AskUserQuestion）
+  3. 检查前置条件 ↓
+  4. 环境=staging → 走 Staging 4步
+     环境=production → 走 Production 6步
+```
+
+### 前置条件 checklist
 
 - [ ] PR 已合入 main
 - [ ] 本地 main 已 pull 到最新（`git pull origin main`）
-- [ ] 确认目标仓库（AskUserQuestion 如用户未明确指定）
 
 ---
 
