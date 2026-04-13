@@ -61,24 +61,31 @@ class ClientPool:
     async def remove(self, session_id: str) -> bool:
         """断开指定 session 的 client 并从 store 中删除。
 
+        使用 per-session lock 确保不会与正在处理的 query/receive_response 并发冲突。
+
         Returns:
             True 如果 session 存在且已移除，False 如果 session 不存在。
         """
-        if session_id not in self._clients:
-            return False
+        if session_id not in self._locks:
+            self._locks[session_id] = asyncio.Lock()
 
-        client = self._clients.pop(session_id)
+        async with self._locks[session_id]:
+            if session_id not in self._clients:
+                return False
+
+            client = self._clients.pop(session_id)
+
+            try:
+                await client.disconnect()
+            except Exception as e:
+                log_error(f"disconnect {session_id} 失败: {e}")
+
+            if self._store:
+                self._store.remove(session_id)
+
+            log_debug(f"已移除 client: {session_id}")
+
         self._locks.pop(session_id, None)
-
-        try:
-            await client.disconnect()
-        except Exception as e:
-            log_error(f"disconnect {session_id} 失败: {e}")
-
-        if self._store:
-            self._store.remove(session_id)
-
-        log_debug(f"已移除 client: {session_id}")
         return True
 
     def list_sessions(self) -> dict:

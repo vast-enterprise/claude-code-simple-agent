@@ -132,44 +132,48 @@ async def handle_message(
     prompt = f"[{sender_label}] 在{'群聊' if chat_type == 'group' else '私聊'}中说：{content}"
 
     session_id = compute_session_id(event)
-    client = await pool.get(session_id)
-
-    # 用存储的 Claude session_id resume，没有则首次创建
-    claude_sid = pool.get_claude_session_id(session_id)
-    await client.query(prompt, session_id=claude_sid)
-
-    # 从该 client 的独立 stream 收集回复
     reply_text = ""
-    reaction_id = None
-    claude_session_saved = False
-    last_msg = None
-    async for msg in client.receive_response():
-        if isinstance(msg, AssistantMessage):
-            if not claude_session_saved and msg.session_id:
-                log_debug(f"[{session_id}] claude session: {msg.session_id}")
-                pool.save_claude_session_id(session_id, msg.session_id)
-                claude_session_saved = True
-            if reaction_id is None:
-                reaction_id = add_reaction(message_id)
-            for block in msg.content:
-                if isinstance(block, TextBlock):
-                    reply_text += block.text
-        elif isinstance(msg, ResultMessage):
-            if not claude_session_saved and msg.session_id:
-                log_debug(f"[{session_id}] claude session: {msg.session_id}")
-                pool.save_claude_session_id(session_id, msg.session_id)
-            if msg.is_error and not reply_text:
-                reply_text = "抱歉，处理时出了点问题。"
-            last_msg = msg
-            break
+    success = True
 
-    if reaction_id:
-        remove_reaction(message_id, reaction_id)
+    try:
+        client = await pool.get(session_id)
 
-    if reply_text.strip():
-        reply_message(message_id, reply_text.strip())
+        # 用存储的 Claude session_id resume，没有则首次创建
+        claude_sid = pool.get_claude_session_id(session_id)
+        await client.query(prompt, session_id=claude_sid)
 
-    # 记录消息指标
-    if metrics:
-        is_error = isinstance(last_msg, ResultMessage) and last_msg.is_error
-        metrics.record_message(session_id, content, not is_error, reply_text[:50])
+        # 从该 client 的独立 stream 收集回复
+        reaction_id = None
+        claude_session_saved = False
+        async for msg in client.receive_response():
+            if isinstance(msg, AssistantMessage):
+                if not claude_session_saved and msg.session_id:
+                    log_debug(f"[{session_id}] claude session: {msg.session_id}")
+                    pool.save_claude_session_id(session_id, msg.session_id)
+                    claude_session_saved = True
+                if reaction_id is None:
+                    reaction_id = add_reaction(message_id)
+                for block in msg.content:
+                    if isinstance(block, TextBlock):
+                        reply_text += block.text
+            elif isinstance(msg, ResultMessage):
+                if not claude_session_saved and msg.session_id:
+                    log_debug(f"[{session_id}] claude session: {msg.session_id}")
+                    pool.save_claude_session_id(session_id, msg.session_id)
+                if msg.is_error and not reply_text:
+                    reply_text = "抱歉，处理时出了点问题。"
+                    success = not msg.is_error
+                break
+
+        if reaction_id:
+            remove_reaction(message_id, reaction_id)
+
+        if reply_text.strip():
+            reply_message(message_id, reply_text.strip())
+
+    except Exception:
+        success = False
+        raise
+    finally:
+        if metrics:
+            metrics.record_message(session_id, content, success, reply_text[:50])

@@ -21,9 +21,17 @@ async def _handle_status(request):
     return _json(s)
 
 
+def _sanitize_sessions(raw: dict) -> dict:
+    """过滤掉内部字段（如 claude_session_id），只返回安全的元数据"""
+    safe = {}
+    for sid, meta in raw.items():
+        safe[sid] = {k: v for k, v in meta.items() if k != "claude_session_id"}
+    return safe
+
+
 async def _handle_sessions(request):
     pool = request.app["pool"]
-    return _json(pool.list_sessions())
+    return _json(_sanitize_sessions(pool.list_sessions()))
 
 
 async def _handle_session_messages(request):
@@ -72,7 +80,7 @@ async def start_server(pool, metrics, port: int = 8420) -> web.AppRunner:
     app = _create_app(pool, metrics)
     runner = web.AppRunner(app)
     await runner.setup()
-    site = web.TCPSite(runner, "0.0.0.0", port)
+    site = web.TCPSite(runner, "127.0.0.1", port)
     await site.start()
     log_info(f"Dashboard: http://localhost:{port}")
     return runner

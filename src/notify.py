@@ -18,7 +18,6 @@ def notify_error(title: str, detail: str) -> None:
     now = time.time()
     if title in _throttle_cache and now - _throttle_cache[title] < _THROTTLE_SECONDS:
         return
-    _throttle_cache[title] = now
 
     receive_id = _notify_config.get("receive_id", "")
     receive_id_type = _notify_config.get("receive_id_type", "open_id")
@@ -30,7 +29,7 @@ def notify_error(title: str, detail: str) -> None:
     data = json.dumps({"receive_id": receive_id, "msg_type": "text", "content": content})
 
     try:
-        subprocess.run(
+        result = subprocess.run(
             [
                 "lark-cli", "api", "POST",
                 "/open-apis/im/v1/messages",
@@ -39,5 +38,9 @@ def notify_error(title: str, detail: str) -> None:
             ],
             capture_output=True, text=True, timeout=10,
         )
+        if result.returncode == 0:
+            _throttle_cache[title] = now
+        else:
+            log_error(f"发送通知失败 (exit {result.returncode}): {result.stderr[:200]}")
     except Exception as e:
         log_error(f"发送通知失败: {e}")

@@ -5,6 +5,7 @@ description = "Tripo Digital Avatar — 飞书机器人数字分身"
 requires-python = ">=3.12"
 dependencies = [
     "claude-agent-sdk>=0.1.56",
+    "aiohttp>=3.9",
 ]
 
 [tool.pytest.ini_options]
