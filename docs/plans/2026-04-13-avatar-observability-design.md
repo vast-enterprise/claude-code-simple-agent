@@ -104,15 +104,12 @@ class SessionStore:
 
 | 指令 | 行为 | 权限 |
 |------|------|------|
+| `/clear` | 清除当前用户自己的 session | 所有人 |
+| `/compact` | 压缩当前用户自己的 session | 所有人 |
 | `/sessions` | 返回 session 列表摘要 | owner |
 | `/status` | 返回系统运行状态 | owner |
-| `/clear` | 清除自己的 session | 所有人 |
-| `/clear <session_id>` | 清除指定 session | owner |
-| `/clear all` | 清除所有 session | owner |
-| `/compact` | 压缩自己的 session | 所有人 |
-| `/compact <session_id>` | 压缩指定 session | owner |
 
-非 owner 只能操作自己的 session。指令不经过 Claude，直接在 handler 层处理并回复。
+飞书指令只操作当前用户自己的 session。跨 session 操作（清除/压缩其他用户的 session）仅通过管理后台 HTTP API 执行。
 
 ## 6. 指标收集 — `src/metrics.py`
 

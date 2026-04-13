@@ -423,18 +423,18 @@ git commit -m "feat: add MetricsCollector for runtime stats"
 **Step 2: Implement command layer**
 
 在 `handle_message` 前新增 `parse_command(content)` 函数：
-- 返回 `(command, args)` 或 `None`
-- `/clear` → `("clear", None)`
-- `/clear p2p_ou_xxx` → `("clear", "p2p_ou_xxx")`
-- `/clear all` → `("clear", "all")`
-- `/compact` → `("compact", None)`
-- `/sessions` → `("sessions", None)`
-- `/status` → `("status", None)`
+- 返回 command 名或 `None`
+- `/clear` → `"clear"`（清除当前用户自己的 session）
+- `/compact` → `"compact"`（压缩当前用户自己的 session）
+- `/sessions` → `"sessions"`（owner only）
+- `/status` → `"status"`（owner only）
 - 非 `/` 开头 → `None`（走正常 Claude 处理）
 
-新增 `handle_command(pool, metrics, event, command, args)` 函数：
-- 权限检查：非 owner 只能 `/clear` 和 `/compact` 自己的 session
-- 执行对应操作
+飞书指令只操作当前用户自己的 session。跨 session 操作（清除别人、清除全部）仅通过 dashboard HTTP API。
+
+新增 `handle_command(pool, metrics, event, command)` 函数：
+- 权限检查：`/sessions` 和 `/status` 仅 owner
+- `/clear` 和 `/compact` 所有人可用，但只操作自己的 session
 - 通过 `reply_message` 返回结果
 
 在 `handle_message` 中集成 `metrics.record_message()` 调用。
