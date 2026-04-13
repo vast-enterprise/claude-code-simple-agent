@@ -250,66 +250,21 @@ class TestHandleMessage:
         assert reply_map.get("om_b") == "reply_B"
 
 
-class TestParseCommand:
-    """parse_command 解析 / 开头的指令"""
-
-    def test_parse_command_clear(self):
-        from src.handler import parse_command
-        assert parse_command("/clear") == "clear"
-
-    def test_parse_command_unknown(self):
-        from src.handler import parse_command
-        assert parse_command("/unknown") is None
-
-    def test_parse_command_normal_message(self):
-        from src.handler import parse_command
-        assert parse_command("hello world") is None
-
-    def test_parse_command_with_args(self):
-        from src.handler import parse_command
-        assert parse_command("/clear some args") == "clear"
-
-    def test_parse_command_case_insensitive(self):
-        from src.handler import parse_command
-        assert parse_command("/CLEAR") == "clear"
-
-
-class TestHandleCommand:
-    """handle_command 处理指令，直接回复飞书"""
-
-    def _event(self, content="/clear", sender_id=None, chat_type="p2p"):
-        return {
-            "content": content,
-            "message_id": "om_cmd",
-            "sender_id": sender_id or OWNER_ID,
-            "chat_type": chat_type,
-        }
+class TestSlashCommandPassthrough:
+    """/ 开头的消息直接发给 Claude Code，不加前缀"""
 
     @patch("src.handler.reply_message")
-    def test_handle_command_clear_removes_session(self, mock_reply):
-        from src.handler import handle_command
-        pool = MagicMock(spec=ClientPool)
-        pool.remove = AsyncMock(return_value=True)
-        metrics = MagicMock()
+    @patch("src.handler.remove_reaction")
+    @patch("src.handler.add_reaction", return_value="r_abc")
+    def test_slash_command_sent_raw(self, mock_add, mock_remove, mock_reply):
+        messages = [
+            AssistantMessage(content=[TextBlock(text="ok")], model="sonnet"),
+            ResultMessage(subtype="result", duration_ms=100, duration_api_ms=80, is_error=False, num_turns=1, session_id="x"),
+        ]
+        pool, client = _make_mock_pool(messages)
 
-        run_async(handle_command(pool, metrics, self._event(), "clear"))
+        event = {"content": "/status", "message_id": "om_test", "sender_id": OWNER_ID, "chat_type": "p2p"}
+        run_async(handle_message(pool, event))
 
-        pool.remove.assert_called_once()
-        mock_reply.assert_called_once_with("om_cmd", "已清除当前会话。下次发消息将开始新对话。")
-
-    @patch("src.handler.reply_message")
-    def test_handle_command_clear_no_session(self, mock_reply):
-        from src.handler import handle_command
-        pool = MagicMock(spec=ClientPool)
-        pool.remove = AsyncMock(return_value=False)
-        metrics = MagicMock()
-
-        run_async(handle_command(pool, metrics, self._event(), "clear"))
-
-        mock_reply.assert_called_once_with("om_cmd", "当前没有活跃会话。")
-
-    def test_parse_command_sessions_not_recognized(self):
-        """sessions 和 status 已从飞书指令移除，只在 dashboard 提供"""
-        from src.handler import parse_command
-        assert parse_command("/sessions") is None
-        assert parse_command("/status") is None
+        prompt = client.query.call_args[0][0]
+        assert prompt == "/status"  # 裸传，不加前缀

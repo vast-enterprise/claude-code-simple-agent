@@ -144,10 +144,21 @@ async def _handle_session_clear(request):
 async def _handle_session_compact(request):
     session_id = request.match_info["session_id"]
     pool = request.app["pool"]
-    from src.handler import _do_compact
-    result = await _do_compact(pool, session_id)
-    ok = "已压缩" in result
-    return _json({"ok": ok, "message": result, "session_id": session_id})
+    claude_sid = pool.get_claude_session_id(session_id)
+    if not claude_sid:
+        return _json({"ok": False, "message": "当前没有活跃会话", "session_id": session_id})
+    try:
+        client = await pool.get(session_id)
+        from claude_agent_sdk.types import ResultMessage
+        await client.query("/compact", session_id=claude_sid)
+        async for msg in client.receive_response():
+            if isinstance(msg, ResultMessage):
+                if msg.is_error:
+                    return _json({"ok": False, "message": "压缩失败", "session_id": session_id})
+                break
+        return _json({"ok": True, "message": "会话已压缩", "session_id": session_id})
+    except Exception as e:
+        return _json({"ok": False, "message": str(e), "session_id": session_id})
 
 
 async def _handle_dashboard(request):

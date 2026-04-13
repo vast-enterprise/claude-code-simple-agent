@@ -16,7 +16,6 @@ if TYPE_CHECKING:
 
 BOT_MENTION = f"@{BOT_NAME}"
 
-_COMMANDS = frozenset(("clear", "compact"))
 
 
 def compute_session_id(event: dict) -> str:
@@ -73,58 +72,6 @@ def _ensure_display_names(pool: ClientPool, event: dict, session_id: str) -> Non
         pool._store.save(session_id, meta)
 
 
-def parse_command(content: str) -> str | None:
-    """解析 / 开头的指令，返回指令名或 None"""
-    if not content.startswith("/"):
-        return None
-    cmd = content.split()[0].lstrip("/").lower()
-    if cmd in _COMMANDS:
-        return cmd
-    return None
-
-
-async def _do_compact(pool: ClientPool, session_id: str) -> str:
-    """向 Claude Code 发送 /compact 内置命令，触发原生会话压缩"""
-    claude_sid = pool.get_claude_session_id(session_id)
-    if not claude_sid:
-        return "当前没有活跃会话，无需压缩。"
-
-    try:
-        client = await pool.get(session_id)
-        await client.query("/compact", session_id=claude_sid)
-
-        async for msg in client.receive_response():
-            if isinstance(msg, ResultMessage):
-                if msg.is_error:
-                    return "压缩失败，请稍后重试。"
-                break
-
-        return "会话已压缩。"
-    except Exception as e:
-        return f"压缩失败: {e}"
-
-
-async def handle_command(
-    pool: ClientPool, metrics: MetricsCollector, event: dict, command: str
-) -> None:
-    """处理飞书指令，直接回复，不经过 Claude"""
-    message_id = event.get("message_id", "")
-    sender_id = event.get("sender_id", "")
-    session_id = compute_session_id(event)
-
-    if command == "clear":
-        removed = await pool.remove(session_id)
-        text = "已清除当前会话。下次发消息将开始新对话。" if removed else "当前没有活跃会话。"
-
-    elif command == "compact":
-        text = await _do_compact(pool, session_id)
-
-    else:
-        text = f"未知指令: /{command}"
-
-    reply_message(message_id, text)
-
-
 async def handle_message(
     pool: ClientPool, event: dict, *, metrics: MetricsCollector | None = None
 ):
@@ -139,16 +86,10 @@ async def handle_message(
 
     content = content.replace(BOT_MENTION, "").strip()
 
-    # 指令检测：/ 开头的指令直接处理，不经过 Claude
-    cmd = parse_command(content)
-    if cmd is not None:
-        await handle_command(pool, metrics, event, cmd)
-        return
-
     permissions.set_sender(sender_id)
 
-    # / 开头的消息直接发给 Claude Code（可能是内置 slash command 如 /status /compact）
-    # 非 / 开头的普通消息加上发送者上下文
+    # / 开头的消息直接发给 Claude Code（内置 slash command 如 /compact /clear /model）
+    # 普通消息加上发送者上下文
     if content.startswith("/"):
         prompt = content
     else:
