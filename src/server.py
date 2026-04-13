@@ -50,8 +50,11 @@ async def _handle_session_clear(request):
 
 async def _handle_session_compact(request):
     session_id = request.match_info["session_id"]
-    # TODO: Claude SDK compact 集成
-    return _json({"ok": False, "message": "compact 功能开发中", "session_id": session_id})
+    pool = request.app["pool"]
+    from src.handler import _do_compact
+    result = await _do_compact(pool, session_id)
+    ok = "已压缩" in result
+    return _json({"ok": ok, "message": result, "session_id": session_id})
 
 
 async def _handle_dashboard(request):

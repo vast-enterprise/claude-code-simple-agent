@@ -57,6 +57,27 @@ def parse_command(content: str) -> str | None:
     return None
 
 
+async def _do_compact(pool: ClientPool, session_id: str) -> str:
+    """向 Claude Code 发送 /compact 内置命令，触发原生会话压缩"""
+    claude_sid = pool.get_claude_session_id(session_id)
+    if not claude_sid:
+        return "当前没有活跃会话，无需压缩。"
+
+    try:
+        client = await pool.get(session_id)
+        await client.query("/compact", session_id=claude_sid)
+
+        async for msg in client.receive_response():
+            if isinstance(msg, ResultMessage):
+                if msg.is_error:
+                    return "压缩失败，请稍后重试。"
+                break
+
+        return "会话已压缩。"
+    except Exception as e:
+        return f"压缩失败: {e}"
+
+
 async def handle_command(
     pool: ClientPool, metrics: MetricsCollector, event: dict, command: str
 ) -> None:
@@ -70,8 +91,7 @@ async def handle_command(
         text = "已清除当前会话。下次发消息将开始新对话。" if removed else "当前没有活跃会话。"
 
     elif command == "compact":
-        # TODO: 调用 Claude SDK compact（当前先返回提示）
-        text = "会话压缩功能开发中。"
+        text = await _do_compact(pool, session_id)
 
     elif command == "sessions":
         if sender_id != OWNER_ID:
