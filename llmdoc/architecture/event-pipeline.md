@@ -77,15 +77,15 @@ lark-cli stdout
 
 **接收端 (`session_reader`)：**
 
-- **6. 持续读取:** `src/handler.py:158-223` — `while True` 循环，`async for msg in client.receive_response()` 流式读取。
-- **6a. FIFO 匹配:** `src/handler.py:174-175` — `pool.peek_pending()` 从队头获取当前处理的飞书 message_id。
+- **6. 持续读取:** `src/handler.py:159-221` — `while True` 循环，`async for msg in client.receive_response()` 流式读取。
+- **6a. FIFO 匹配:** `src/handler.py:174-175` — `pool.peek_pending()` 从队头获取当前处理的飞书 message_id（`current_msg`）。
 - **6b. Claude session 持久化:** `src/handler.py:178-181` — 首次 `AssistantMessage.session_id` 存入 store。
 - **6c. Reaction 生命周期:** `src/handler.py:182-183` — `AssistantMessage` 时 `add_reaction`，`ResultMessage` 时 `remove_reaction`。
-- **6d. 回复 + 出队:** `src/handler.py:197-206` — `ResultMessage` 后 `reply_message()` 回复飞书 → `pool.dequeue_message()` 弹出队头 → `metrics.record_message()` 记录。
-- **6e. 状态重置:** `src/handler.py:208-213` — 重置所有状态变量，准备处理下一条消息的响应。
-- **6f. 异常处理:** `src/handler.py:215-223` — 清理残留 reaction，记录失败 metrics，弹出队头。
+- **6d. 回复 + 1:1 出队:** `src/handler.py:196-205` — `ResultMessage` 后 `reply_message()` 回复飞书 → `pool.dequeue_message()` 弹出队头一条 → `metrics.record_message()` 记录。每个 ResultMessage 只 dequeue 一条。
+- **6e. 状态重置:** `src/handler.py:207-212` — 重置 `reply_text`、`reaction_id`、`current_msg`、`success`、`claude_session_saved`，准备处理下一个 turn。
+- **6f. 异常处理:** `src/handler.py:214-221` — 清理残留 reaction，记录失败 metrics，弹出队头。
 
-### 3.3 FIFO 消息队列机制
+### 3.3 FIFO 消息队列机制（1:1 Dequeue 策略）
 
 `ClientPool._pending` 是 per-session `collections.deque`，作为发送端和接收端的桥梁：
 
@@ -95,8 +95,17 @@ lark-cli stdout
 | `peek_pending()` — 查看队头（不弹出） | `session_reader` | `src/pool.py:145-149` |
 | `dequeue_message()` — 弹出队头 | `session_reader` | `src/pool.py:152-157` |
 | `has_pending()` — 是否有待处理消息 | 调用方按需 | `src/pool.py:159-162` |
+| `pending_count()` — 队列长度 | 未使用（保留） | `src/pool.py:164-167` |
+| `dequeue_batch()` — 批量弹出 | 未使用（保留） | `src/pool.py:169-177` |
 
-**映射关系：** 用户发一条消息 → `send_message` 做一次 `query()` + 一次 `enqueue()` → `session_reader` 收到 Claude 响应后 `peek()` 获取对应的飞书 message_id → `ResultMessage` 时 `dequeue()` + `reply_message()`。多条消息按 FIFO 顺序依次处理。
+**1:1 Dequeue 策略：** 每个 `ResultMessage` 只 dequeue 一条 FIFO 消息。用户发一条消息 → `send_message` 做一次 `query()` + 一次 `enqueue()` → `session_reader` 收到 Claude 响应后 `peek()` 获取对应的飞书 message_id → `ResultMessage` 时 `dequeue()` + `reply_message()`。多条消息按 FIFO 顺序依次处理。
+
+**Claude 合并行为的 Trade-off：** Claude Code 有时会将 stdin 中积压的多条 query 合并为一个 turn 处理（一次 `AssistantMessage` → `ResultMessage` 周期覆盖多条问题）。此时合并回复发到第一条消息，后续 turn 处理 FIFO 中的剩余消息。这是可接受的 trade-off——保证每条用户消息都能收到回复，代价是合并场景下第一条消息的回复内容涵盖了多个问题。
+
+**设计迭代历史：**
+1. **初始设计（1:1 dequeue）**：每个 ResultMessage dequeue 一条。问题：Claude 合并 query 时 FIFO 和 response 错位。
+2. **batch dequeue（快照机制）**：首个 AssistantMessage 时快照 FIFO 长度，ResultMessage 时批量 dequeue。问题：Claude 的合并行为不可预测，批量 dequeue 太激进导致后续 turn 的回复丢失（FIFO 被提前清空）。
+3. **最终方案（回归 1:1）**：接受 trade-off，保证每条消息都有回复。`dequeue_batch()` 和 `pending_count()` 保留在 `pool.py` 中但 `session_reader` 不再调用。
 
 ### 3.4 进程生命周期管理
 
@@ -144,6 +153,7 @@ lark-cli stdout
 
 - **Query/Response 解耦:** 旧架构中 `handle_message` 阻塞等待 `receive_response` 完成，同一 session 内消息必须排队。新架构将发送和接收拆开——`send_message` 仅写 stdin 后立即返回，用户可连续发送多条消息而不阻塞。Claude Code 内部按序处理，reader task 按 FIFO 顺序匹配响应和飞书回复。
 - **Per-session FIFO 而非全局队列:** 每个 session 独立 FIFO，避免不同 session 的消息互相干扰。FIFO 元素包含 `message_id`（用于飞书回复定位）和 `content`（用于 metrics 记录）。
+- **1:1 Dequeue 而非 Batch Dequeue:** 经历三次迭代后确定。Batch dequeue 快照机制因 Claude 合并行为不可预测而导致回复丢失，1:1 策略虽然在合并场景下回复定位不完美（合并回复发到第一条消息），但保证每条消息都能收到回复，是更安全的选择。
 - **Reader task 长驻而非 per-message:** Reader task 随 session 首条消息启动，持续运行直到 session 被清理或进程退出。避免了每条消息都创建/销毁 task 的开销。
 - **`/interrupt` 指令:** 使用 SDK 的 `{"subtype": "interrupt"}` 控制协议（非 POSIX 信号），通过 `pool.get_client()` 获取已有 client 后调用 `client.interrupt()`。
 - **进程隔离:** `start_new_session=True` + `os.killpg` 独立进程组清理；`bypassPermissions` + `permission_gate` headless 权限；Session resume 下沉到 Pool 层自动 `--resume`。
