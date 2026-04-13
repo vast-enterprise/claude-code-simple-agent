@@ -18,7 +18,7 @@
 ### architecture/
 | 文档 | 说明 |
 |------|------|
-| [event-pipeline.md](architecture/event-pipeline.md) | 事件驱动管道、多进程池模型（ClientPool）、进程生命周期、slash command 透传、session resume |
+| [event-pipeline.md](architecture/event-pipeline.md) | 事件驱动管道、query/response 解耦模型（send_message + session_reader）、per-session FIFO 队列、reader task 生命周期、/interrupt 指令、session resume |
 | [observability.md](architecture/observability.md) | 可观测性体系：异常通知、session 持久化、历史归档、指标收集、HTTP API、Dashboard、Session 详情页、历史记录页、Conversation API、名字解析 |
 | [lark-interaction.md](architecture/lark-interaction.md) | 飞书交互层：消息回复、表情反馈、事件订阅 |
 | [permission-model.md](architecture/permission-model.md) | 双层权限模型：代码强制 + prompt 约束 |
