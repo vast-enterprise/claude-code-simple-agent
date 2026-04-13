@@ -16,7 +16,7 @@ if TYPE_CHECKING:
 
 BOT_MENTION = f"@{BOT_NAME}"
 
-_COMMANDS = frozenset(("clear", "compact", "sessions", "status"))
+_COMMANDS = frozenset(("clear", "compact"))
 
 
 def compute_session_id(event: dict) -> str:
@@ -93,33 +93,6 @@ async def handle_command(
     elif command == "compact":
         text = await _do_compact(pool, session_id)
 
-    elif command == "sessions":
-        if sender_id != OWNER_ID:
-            text = "仅所有者可查看 session 列表。"
-        else:
-            sessions = pool.list_sessions()
-            if not sessions:
-                text = "当前没有任何 session。"
-            else:
-                lines = [f"共 {len(sessions)} 个 session："]
-                for sid, meta in sessions.items():
-                    count = meta.get("message_count", 0)
-                    last = meta.get("last_active", "未知")[:16]
-                    lines.append(f"• {sid} ({count}条, 最后活跃: {last})")
-                text = "\n".join(lines)
-
-    elif command == "status":
-        if sender_id != OWNER_ID:
-            text = "仅所有者可查看系统状态。"
-        else:
-            s = metrics.status()
-            sessions = pool.list_sessions()
-            text = (
-                f"运行时间: {s['uptime']}\n"
-                f"总消息数: {s['total_messages']}\n"
-                f"错误数: {s['total_errors']} ({s['error_rate']})\n"
-                f"活跃 Session: {len(sessions)}"
-            )
     else:
         text = f"未知指令: /{command}"
 

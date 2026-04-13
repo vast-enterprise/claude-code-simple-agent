@@ -265,7 +265,7 @@ class TestParseCommand:
 
     def test_parse_command_with_args(self):
         from src.handler import parse_command
-        assert parse_command("/status some args") == "status"
+        assert parse_command("/clear some args") == "clear"
 
     def test_parse_command_case_insensitive(self):
         from src.handler import parse_command
@@ -306,22 +306,8 @@ class TestHandleCommand:
 
         mock_reply.assert_called_once_with("om_cmd", "当前没有活跃会话。")
 
-    @patch("src.handler.reply_message")
-    def test_handle_command_sessions_non_owner(self, mock_reply):
-        from src.handler import handle_command
-        pool = MagicMock(spec=ClientPool)
-        metrics = MagicMock()
-
-        run_async(handle_command(pool, metrics, self._event(sender_id="ou_non_owner"), "sessions"))
-
-        mock_reply.assert_called_once_with("om_cmd", "仅所有者可查看 session 列表。")
-
-    @patch("src.handler.reply_message")
-    def test_handle_command_status_non_owner(self, mock_reply):
-        from src.handler import handle_command
-        pool = MagicMock(spec=ClientPool)
-        metrics = MagicMock()
-
-        run_async(handle_command(pool, metrics, self._event(sender_id="ou_non_owner"), "status"))
-
-        mock_reply.assert_called_once_with("om_cmd", "仅所有者可查看系统状态。")
+    def test_parse_command_sessions_not_recognized(self):
+        """sessions 和 status 已从飞书指令移除，只在 dashboard 提供"""
+        from src.handler import parse_command
+        assert parse_command("/sessions") is None
+        assert parse_command("/status") is None
