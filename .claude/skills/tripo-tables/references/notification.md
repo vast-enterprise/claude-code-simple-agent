@@ -43,7 +43,7 @@ lark-cli im +messages-send \
 lark-cli im +messages-send \
   --as bot \
   --user-id ou_8adc8aca7ad728142eb6669e5b13fb52 \
-  --text $'[需求评审完成]\n需求: <需求名称>\n状态: 已输出评审文档，提议变更为"定容确认"\n操作: 请在 Claude Code 中确认容量，或提出修改意见'
+  --text $'[需求评审完成]\n需求: <需求名称>\n状态: 已输出评审文档，提议变更为"定容确认"\n\n文档: <Wiki 文档链接>\n\n操作: 请在 Claude Code 中确认容量，或提出修改意见'
 ```
 
 ### 节点 2：技术评审确认（步骤 5）
@@ -54,18 +54,20 @@ lark-cli im +messages-send \
 lark-cli im +messages-send \
   --as bot \
   --user-id ou_8adc8aca7ad728142eb6669e5b13fb52 \
-  --text $'[技术方案完成]\n需求: <需求名称>\n状态: 已输出技术方案文档\n操作: 请在 Claude Code 中确认方案，或提出修改意见'
+  --text $'[技术方案完成]\n需求: <需求名称>\n状态: 已输出技术方案文档\n\n文档: <Wiki 文档链接>\n\n操作: 请在 Claude Code 中确认方案，或提出修改意见'
 ```
 
 ### 节点 3：自动化闭环完成（步骤 8）
 
 **触发时机**: Code Review + 集成测试全部通过之后
 
+**前置条件**: step 8 产出的 3 份文档（code-review、test-plan、test-report）必须已同步到 wiki（→ tripo-task-dirs wiki 同步规则），通知中必须带 wiki 链接。
+
 ```bash
 lark-cli im +messages-send \
   --as bot \
   --user-id ou_8adc8aca7ad728142eb6669e5b13fb52 \
-  --text $'[PR 已完成验证]\n需求: <需求名称>\nPR: <PR 链接>\n\n✅ Code Review: 通过\n✅ 集成测试: 通过\n\n报告: tasks/$TASK_ID/integration-test-report.md\n\n操作: 请 review 并合并'
+  --text $'[PR 已完成验证]\n需求: <需求名称>\nPR: <PR 链接>\n\n✅ Code Review: 通过\n✅ 集成测试: 通过\n\n文档:\n- Code Review: <Wiki 文档链接>\n- 测试计划: <Wiki 文档链接>\n- 测试报告: <Wiki 文档链接>\n\n操作: 请 review 并合并'
 ```
 
 ### 节点 4：上线前确认（步骤 10）
@@ -85,6 +87,7 @@ lark-cli im +messages-send \
 |--------|--------|
 | `<需求名称>` | 当前需求的简短描述 |
 | `<PR 链接>` | 创建的 PR URL |
+| `<Wiki 文档链接>` | 已同步到飞书 wiki 的文档链接，格式 `https://vastai3d.feishu.cn/wiki/<node_token>`。多个文档时逐行列出 |
 
 ## 注意事项
 
