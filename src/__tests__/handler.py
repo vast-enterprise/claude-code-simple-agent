@@ -201,10 +201,9 @@ class TestSendMessage:
 class TestSessionReader:
     """session_reader 后台持续读取 response 并回复飞书"""
 
-    def _setup_reader(self, messages, pending_entries=None):
+    def _setup_reader(self, messages, pending_entry=None):
         """构造 mock pool + client，client.receive_response() 产出 messages。
 
-        pending_entries: 单个 dict 或 dict 列表，模拟 FIFO 中的待处理消息。
         get_client 在第一次调用后返回 None，使 reader 在一轮后退出。
         """
         pool, client = _make_mock_pool()
@@ -221,15 +220,9 @@ class TestSessionReader:
             return client if call_count[0] <= 1 else None
         pool.get_client = MagicMock(side_effect=get_client_once)
 
-        if pending_entries is not None:
-            # 支持单个 dict 或列表
-            entries = [pending_entries] if isinstance(pending_entries, dict) else list(pending_entries)
-            pool.pending_count = MagicMock(return_value=len(entries))
-            pool.peek_pending = MagicMock(return_value=entries[0] if entries else None)
-            pool.dequeue_batch = MagicMock(return_value=entries)
-            pool.dequeue_message = MagicMock(return_value=entries[0] if entries else None)
-        else:
-            pool.pending_count = MagicMock(return_value=0)
+        if pending_entry:
+            pool.peek_pending = MagicMock(return_value=pending_entry)
+            pool.dequeue_message = MagicMock(return_value=pending_entry)
         return pool
 
     @patch("src.handler.reply_message")
@@ -281,7 +274,7 @@ class TestSessionReader:
     @patch("src.handler.reply_message")
     @patch("src.handler.remove_reaction")
     @patch("src.handler.add_reaction", return_value="r_abc")
-    def test_dequeues_batch_after_result(self, mock_add, mock_remove, mock_reply):
+    def test_dequeues_one_per_result(self, mock_add, mock_remove, mock_reply):
         messages = [
             AssistantMessage(content=[TextBlock(text="ok")], model="sonnet"),
             ResultMessage(subtype="result", duration_ms=100, duration_api_ms=80, is_error=False, num_turns=1, session_id="x"),
@@ -291,32 +284,7 @@ class TestSessionReader:
 
         run_async(session_reader("p2p_test", pool))
 
-        pool.dequeue_batch.assert_called_once()
-
-    @patch("src.handler.reply_message")
-    @patch("src.handler.remove_reaction")
-    @patch("src.handler.add_reaction", return_value="r_abc")
-    def test_merged_turn_replies_to_first_message(self, mock_add, mock_remove, mock_reply):
-        """Claude 合并多条消息到一个 turn 时，回复发到第一条消息"""
-        messages = [
-            AssistantMessage(content=[TextBlock(text="合并回复")], model="sonnet"),
-            ResultMessage(subtype="result", duration_ms=100, duration_api_ms=80, is_error=False, num_turns=1, session_id="x"),
-        ]
-        entries = [
-            {"message_id": "om_1", "content": "first"},
-            {"message_id": "om_2", "content": "second"},
-        ]
-        pool = self._setup_reader(messages, entries)
-
-        run_async(session_reader("p2p_test", pool))
-
-        # 回复到第一条消息
-        mock_reply.assert_called_once_with("om_1", "合并回复")
-        # reaction 也在第一条消息上
-        mock_add.assert_called_once_with("om_1")
-        mock_remove.assert_called_once_with("om_1", "r_abc")
-        # 批量 dequeue 2 条
-        pool.dequeue_batch.assert_called_once_with("p2p_test", 2)
+        pool.dequeue_message.assert_called_once_with("p2p_test")
 
     @patch("src.handler.reply_message")
     @patch("src.handler.remove_reaction")

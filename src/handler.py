@@ -152,9 +152,9 @@ async def session_reader(
 ):
     """接收端：per-session 后台 reader，持续从 Claude 读取响应并回复飞书。
 
-    Claude 可能将多条 query 合并到一个 turn（当 stdin 上有积压消息时）。
-    因此使用"turn 快照"机制：收到首个 AssistantMessage 时快照 FIFO 长度，
-    ResultMessage 时批量 dequeue 该快照数量的条目，回复到最早那条飞书消息。
+    每个 ResultMessage dequeue FIFO 队头一条消息，回复到该消息。
+    Claude 可能合并多条 query 到一个 turn，此时回复内容覆盖多个问题，
+    但 dequeue 仍只弹一条——后续 turn 会处理剩余消息。
     """
     while True:
         client = pool.get_client(session_id)
@@ -164,26 +164,23 @@ async def session_reader(
 
         reply_text = ""
         reaction_id = None
-        primary_msg = None       # 这轮 turn 的第一条飞书消息（回复目标）
-        turn_batch_size = 0      # 这轮 turn 包含的消息数（快照）
+        current_msg = None
         success = True
         claude_session_saved = False
 
         try:
             async for msg in client.receive_response():
+                # 从 FIFO 队头获取当前处理的飞书消息
+                if current_msg is None:
+                    current_msg = pool.peek_pending(session_id)
+
                 if isinstance(msg, AssistantMessage):
                     if not claude_session_saved and msg.session_id:
                         log_debug(f"[{session_id}] claude session: {msg.session_id}")
                         pool.save_claude_session_id(session_id, msg.session_id)
                         claude_session_saved = True
-
-                    # 首个 AssistantMessage：快照 FIFO 长度 + 确定回复目标
-                    if primary_msg is None:
-                        turn_batch_size = pool.pending_count(session_id)
-                        primary_msg = pool.peek_pending(session_id)
-                        if primary_msg:
-                            reaction_id = add_reaction(primary_msg["message_id"])
-
+                    if reaction_id is None and current_msg:
+                        reaction_id = add_reaction(current_msg["message_id"])
                     for block in msg.content:
                         if isinstance(block, TextBlock):
                             reply_text += block.text
@@ -196,47 +193,28 @@ async def session_reader(
                         reply_text = "抱歉，处理时出了点问题。"
                         success = False
 
-                    # 没有 AssistantMessage 就直接到 ResultMessage（纯错误场景）
-                    if primary_msg is None:
-                        turn_batch_size = pool.pending_count(session_id)
-                        primary_msg = pool.peek_pending(session_id)
-
-                    # 批量 dequeue 这轮 turn 的所有消息
-                    batch = pool.dequeue_batch(session_id, max(turn_batch_size, 1))
-
-                    if primary_msg:
-                        mid = primary_msg["message_id"]
+                    # dequeue 一条，回复到该消息
+                    if current_msg:
+                        mid = current_msg["message_id"]
                         if reaction_id:
                             remove_reaction(mid, reaction_id)
                         if reply_text.strip():
                             reply_message(mid, reply_text.strip())
+                        if metrics:
+                            metrics.record_message(session_id, current_msg.get("content", ""), success, reply_text[:50])
+                        pool.dequeue_message(session_id)
 
-                    # 记录 metrics（按实际 batch 中的每条消息）
-                    if metrics:
-                        for entry in batch:
-                            is_primary = entry.get("message_id") == (primary_msg or {}).get("message_id")
-                            metrics.record_message(
-                                session_id,
-                                entry.get("content", ""),
-                                success,
-                                reply_text[:50] if is_primary else "",
-                            )
-
-                    if len(batch) > 1:
-                        log_debug(f"[{session_id}] turn 合并了 {len(batch)} 条消息")
-
-                    # 重置状态
+                    # 重置状态，准备处理下一条
                     reply_text = ""
                     reaction_id = None
-                    primary_msg = None
-                    turn_batch_size = 0
+                    current_msg = None
                     success = True
                     claude_session_saved = False
 
         except Exception as e:
             log_error(f"[{session_id}] reader 异常: {e}")
-            if reaction_id and primary_msg:
-                remove_reaction(primary_msg["message_id"], reaction_id)
-            if primary_msg and metrics:
-                metrics.record_message(session_id, primary_msg.get("content", ""), False, "")
+            if reaction_id and current_msg:
+                remove_reaction(current_msg["message_id"], reaction_id)
+            if current_msg and metrics:
+                metrics.record_message(session_id, current_msg.get("content", ""), False, "")
                 pool.dequeue_message(session_id)
