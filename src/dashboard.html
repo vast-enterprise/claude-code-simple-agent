@@ -201,12 +201,16 @@ function renderSessions() {
     var id = entry[0];
     var s = entry[1];
     var rowBg = idx % 2 === 0 ? 'bg-gray-800' : 'bg-gray-800/60';
+    var displayName = s.sender_name || id;
+    var subtitle = s.chat_name ? '@ ' + escapeHtml(s.chat_name) : (id.startsWith('p2p_') ? '私聊' : '');
     return '<tr class="' + rowBg + ' hover:bg-gray-700/50 transition-colors">' +
       '<td class="px-4 py-3">' +
         '<a href="/session.html?id=' + encodeURIComponent(id) + '" ' +
-          'class="text-purple-400 hover:text-purple-300 hover:underline font-mono text-xs transition-colors">' +
-          escapeHtml(id) +
+          'class="text-purple-400 hover:text-purple-300 hover:underline transition-colors">' +
+          '<span class="font-medium">' + escapeHtml(displayName) + '</span>' +
+          (subtitle ? '<span class="text-gray-500 text-xs ml-2">' + subtitle + '</span>' : '') +
         '</a>' +
+        '<div class="text-gray-600 text-xs font-mono mt-0.5">' + escapeHtml(id) + '</div>' +
       '</td>' +
       '<td class="px-4 py-3 text-gray-400">' + localTime(s.created_at) + '</td>' +
       '<td class="px-4 py-3 text-gray-400" title="' + localTime(s.last_active) + '">' + relativeTime(s.last_active) + '</td>' +

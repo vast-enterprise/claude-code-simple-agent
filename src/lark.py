@@ -40,6 +40,36 @@ def remove_reaction(message_id: str, reaction_id: str):
         log_error(f"移除表情失败: {result.stderr[:200]}")
 
 
+def resolve_user_name(open_id: str) -> str | None:
+    """通过 lark-cli 解析 open_id 为用户名，失败返回 None"""
+    result = subprocess.run(
+        [
+            "lark-cli", "contact", "+get-user",
+            "--user-id", open_id, "--user-id-type", "open_id",
+            "--as", "bot", "-q", ".data.user.name",
+        ],
+        capture_output=True, text=True, timeout=10,
+    )
+    if result.returncode == 0 and result.stdout.strip():
+        return result.stdout.strip()
+    return None
+
+
+def resolve_chat_name(chat_id: str) -> str | None:
+    """通过 lark-cli 解析 chat_id 为群名，失败返回 None"""
+    params = json.dumps({"chat_id": chat_id})
+    result = subprocess.run(
+        [
+            "lark-cli", "im", "chats", "get",
+            "--params", params, "--as", "bot", "-q", ".data.name",
+        ],
+        capture_output=True, text=True, timeout=10,
+    )
+    if result.returncode == 0 and result.stdout.strip():
+        return result.stdout.strip()
+    return None
+
+
 def reply_message(message_id: str, text: str):
     """通过 lark-cli 回复飞书消息"""
     if len(text) > 4000:

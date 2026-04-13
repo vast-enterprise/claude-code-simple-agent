@@ -73,6 +73,7 @@ def _make_mock_pool(messages, claude_session_id=None):
     pool.get = AsyncMock(return_value=client)
     pool.get_claude_session_id = MagicMock(return_value=claude_session_id)
     pool.save_claude_session_id = MagicMock()
+    pool._store = None  # 跳过 display name 解析
     return pool, client
 
 
@@ -231,6 +232,7 @@ class TestHandleMessage:
         pool.get = AsyncMock(side_effect=lambda sid: clients[sid])
         pool.get_claude_session_id = MagicMock(return_value=None)
         pool.save_claude_session_id = MagicMock()
+        pool._store = None
 
         async def run():
             event_a = {"content": "hello_a", "message_id": "om_a", "sender_id": OWNER_ID, "chat_type": "p2p"}

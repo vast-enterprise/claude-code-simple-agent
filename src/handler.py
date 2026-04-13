@@ -8,7 +8,7 @@ from claude_agent_sdk.types import AssistantMessage, ResultMessage, TextBlock
 
 import src.permissions as permissions
 from src.config import OWNER_ID, BOT_NAME, log_debug
-from src.lark import add_reaction, remove_reaction, reply_message
+from src.lark import add_reaction, remove_reaction, reply_message, resolve_user_name, resolve_chat_name
 from src.pool import ClientPool
 
 if TYPE_CHECKING:
@@ -45,6 +45,32 @@ def should_respond(event: dict) -> bool:
             return True
 
     return False
+
+
+def _ensure_display_names(pool: ClientPool, event: dict, session_id: str) -> None:
+    """首次遇到新 session 时，解析 sender_name 和 chat_name 并存入 store"""
+    if not pool._store:
+        return
+    existing = pool._store.load_all().get(session_id, {})
+    if existing.get("sender_name"):
+        return  # 已有名字，跳过
+
+    meta: dict = {}
+    sender_id = event.get("sender_id", "")
+    if sender_id:
+        name = resolve_user_name(sender_id)
+        if name:
+            meta["sender_name"] = name
+
+    chat_type = event.get("chat_type", "")
+    chat_id = event.get("chat_id", "")
+    if chat_type == "group" and chat_id:
+        chat_name = resolve_chat_name(chat_id)
+        if chat_name:
+            meta["chat_name"] = chat_name
+
+    if meta:
+        pool._store.save(session_id, meta)
 
 
 def parse_command(content: str) -> str | None:
@@ -125,6 +151,10 @@ async def handle_message(
     prompt = f"[{sender_label}] 在{'群聊' if chat_type == 'group' else '私聊'}中说：{content}"
 
     session_id = compute_session_id(event)
+
+    # 首次遇到新 session 时解析并存储 sender_name / chat_name
+    _ensure_display_names(pool, event, session_id)
+
     reply_text = ""
     success = True
 
