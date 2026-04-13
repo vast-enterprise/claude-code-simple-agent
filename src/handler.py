@@ -86,9 +86,17 @@ async def handle_message(
 
     content = content.replace(BOT_MENTION, "").strip()
 
+    # /clear 自行处理（Claude Code 的 /clear 会被权限拦截）
+    if content.strip().lower() == "/clear":
+        session_id = compute_session_id(event)
+        removed = await pool.remove(session_id)
+        text = "已清除当前会话。下次发消息将开始新对话。" if removed else "当前没有活跃会话。"
+        reply_message(message_id, text)
+        return
+
     permissions.set_sender(sender_id)
 
-    # / 开头的消息直接发给 Claude Code（内置 slash command 如 /compact /clear /model）
+    # / 开头的消息直接发给 Claude Code（内置 slash command 如 /compact /context /model）
     # 普通消息加上发送者上下文
     if content.startswith("/"):
         prompt = content
