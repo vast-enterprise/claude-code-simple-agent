@@ -13,7 +13,7 @@ from claude_agent_sdk.types import AssistantMessage, ResultMessage, TextBlock
 
 import src.permissions as permissions
 from src.config import OWNER_ID, BOT_NAME, log_debug, log_error
-from src.lark import add_reaction, remove_reaction, reply_message, resolve_user_name, resolve_chat_name
+from src.lark import add_reaction, remove_reaction, reply_message, resolve_rich_content, resolve_user_name, resolve_chat_name
 from src.pool import ClientPool
 
 if TYPE_CHECKING:
@@ -88,6 +88,11 @@ async def send_message(
     message_id = event.get("message_id", "")
     sender_id = event.get("sender_id", "")
     chat_type = event.get("chat_type", "p2p")
+
+    # 富消息解析：merge_forward / image / file 等非纯文本类型
+    rich = resolve_rich_content(event)
+    if rich is not None:
+        content = rich
 
     if not content or not message_id:
         return

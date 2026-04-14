@@ -26,13 +26,19 @@
 | 2026-04-13 | CMS PR | ✅ 完成 | PR #40: https://github.com/vast-enterprise/tripo-cms/pull/40 |
 | 2026-04-13 | 集成测试 | ✅ 完成 | 10/10 通过，117 单元测试通过，tsc 0 errors |
 | 2026-04-13 | 飞书通知 | ✅ 完成 | 步骤 8 闭环通知已发送 |
-| 2026-04-13 | 前端 CMS 接入 | ⏳ 未启动 | worktree 已创建，PLAN.md 已写入，等 CMS 合并后开发 |
+| 2026-04-14 | CMS PR 合并 | ✅ 完成 | PR #40 已合并到 main，主工作区已同步 |
+| 2026-04-14 | 验收修复 | ✅ 完成 | 移除 sync API delete 能力、补全 articleHeader 必填字段、更新 API 文档并推送 wiki |
+| 2026-04-14 | 前端 CMS 接入 | ⏳ 未启动 | worktree 已创建，PLAN.md 已写入，CMS 已合并可开发 |
+| 2026-04-14 | 前端技术评审 | ✅ 完成 | 方案 A+（服务端适配层 + Media sizes 响应式），用户确认 |
+| 2026-04-14 | 前端开发 | ✅ 完成 | 8 文件改动，67 单测，151 全量测试通过 |
+| 2026-04-14 | 前端 PR | ✅ 完成 | PR #188: https://github.com/vast-enterprise/fe-tripo-homepage/pull/188 |
+| 2026-04-14 | 前端闭环 | 🔄 进行中 | 步骤 8 Code Review + 测试 |
 
 ## 当前状态
 
-- **阶段**: 步骤 8 闭环完成，等待 PR 合并 + 前端开发
-- **状态**: CMS PR 待合并，前端 worktree 已准备
-- **下一步**: 合并 CMS PR → 部署 → 前端 CMS 接入开发 → 端到端验证
+- **阶段**: 步骤 9 验收中 → 前端子循环步骤 8（自动化闭环）
+- **状态**: PR #188 已创建，进入 Code Review + 测试闭环
+- **下一步**: Code Review → 测试报告 → 飞书通知 → 本地联调 → 合并
 
 ## 已完成的工作
 
@@ -53,9 +59,14 @@
 
 ## 待完成的工作
 
-1. CMS PR #40 合并 + 部署到 staging/production
-2. fe-tripo-homepage：Phase 2-6（API 切换 + 类型适配 + 组件适配 + Sitemap + 验证）
-3. 端到端联调验证
+1. ~~CMS PR #40 合并~~ ✅ + 部署到 production（staging 已部署）
+2. 三步迁移:
+   - Step 1: 单篇推送验证（CMS sync API 端到端）
+   - Step 2: 全量推送联调（所有 Crescendia 数据灌入 CMS）
+   - Step 3: 前端切换渲染（方案 A 服务端适配层，4 文件改动）
+3. Sitemap 集成
+4. 端到端联调验证
+5. PR 创建 + Code Review + 闭环测试
 
 ## 关联资源
 
@@ -63,6 +74,12 @@
 - 执行中需求: recvfBp9eR8ZGK (Table: tblxLMQ8Ih5Gs5oM)
 - CMS Worktree: /Users/macbookair/Desktop/projects/tripo-cms/.worktrees/hub-spoke/
 - CMS 分支: feat/hub-spoke-pages
+- 前端 Worktree: /Users/macbookair/Desktop/projects/fe-tripo-homepage/.worktrees/feature/REQ-recvfwTbU1yXx4-cms-hub-spoke/
+- 前端分支: feature/REQ-recvfwTbU1yXx4-cms-hub-spoke
+- Wiki 子目录: KnYcwc6aYi0laPkjpZ4czZYlnqd (https://a9ihi0un9c.feishu.cn/wiki/KnYcwc6aYi0laPkjpZ4czZYlnqd)
+- Wiki 文档:
+  - Hub-Spoke Sync API 文档: W3qkwBZ29iLK6WklIhfczd7Gn3b (https://a9ihi0un9c.feishu.cn/wiki/W3qkwBZ29iLK6WklIhfczd7Gn3b)
+  - 技术方案（前端CMS接入）: IZgwwpVFDi5zcbki0y3cq6Lhnhb (https://a9ihi0un9c.feishu.cn/wiki/IZgwwpVFDi5zcbki0y3cq6Lhnhb)
 
 ## 备注
 

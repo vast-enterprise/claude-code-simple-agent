@@ -9,10 +9,10 @@
 
 - `src/main.py` (`main`, `start_event_listener`, `_read_or_shutdown`, `_crash_hook`): 程序入口，负责事件循环、lark-cli 进程组管理、asyncio-native 信号处理、ClientPool + SessionDispatcher + MetricsCollector + SessionStore + HTTP server 集成、崩溃/断连通知。
 - `src/pool.py` (`ClientPool`): per-session 独立 `ClaudeSDKClient` 池 + per-session FIFO 消息队列。惰性创建，per-session `asyncio.Lock` 防并发重复创建，集成 `SessionStore` 持久化。`get()` 创建新 client 时自动检查 store 中的 `claude_session_id`，若存在则通过 `dataclasses.replace(options, resume=stored_sid)` 实现重启后 session 恢复。FIFO 队列 (`_pending`) 用于对齐 query → response → 飞书回复映射。
-- `src/handler.py` (`should_respond`, `send_message`, `session_reader`, `compute_session_id`, `_ensure_display_names`): 消息过滤、session ID 计算、名字解析。`send_message` 是发送端（非阻塞 query + 入队 FIFO），`session_reader` 是接收端（持续读取响应 + 回复飞书 + 管理 reaction 生命周期）。自行处理 `/clear` 和 `/interrupt`，其他 slash commands 原样透传给 Claude Code。
+- `src/handler.py` (`should_respond`, `send_message`, `session_reader`, `compute_session_id`, `_ensure_display_names`): 消息过滤、session ID 计算、名字解析。`send_message` 是发送端（富消息解析 + 非阻塞 query + 入队 FIFO），`session_reader` 是接收端（持续读取响应 + 回复飞书 + 管理 reaction 生命周期）。自行处理 `/clear` 和 `/interrupt`，其他 slash commands 原样透传给 Claude Code。
 - `src/session.py` (`SessionDispatcher`): 调度器，直接 await send_coro（非阻塞），首次消息时启动 per-session reader task。Reader task 随 session 生命周期存在。
 - `src/permissions.py` (`permission_gate`, `set_sender`, `get_sender`, `_current_sender_id`): 工具调用权限门控回调，通过 `contextvars.ContextVar` 传递 sender 身份，支持并发隔离。
-- `src/lark.py` (`add_reaction`, `remove_reaction`, `reply_message`, `resolve_user_name`, `resolve_chat_name`): 飞书交互叶节点，全部为同步 `subprocess.run` 调用 `lark-cli`。
+- `src/lark.py` (`add_reaction`, `remove_reaction`, `reply_message`, `resolve_user_name`, `resolve_chat_name`, `resolve_rich_content`): 飞书交互叶节点 + 富消息解析模块。API 交互全部为同步 `subprocess.run` 调用 `lark-cli`。富消息解析将 merge_forward/image/file/audio/video/sticker/media 转为可读文本。
 - `src/config.py` (`ROOT`, `CONFIG`, `PERSONA`, `OWNER_ID`, `NOTIFY_CONFIG`, `DISALLOWED_TOOLS`, `log_debug`, `log_info`, `log_error`): 配置加载叶节点 + 结构化日志系统。
 - 可观测性模块（`notify.py`, `store.py`, `metrics.py`, `server.py`）：详见 `/llmdoc/architecture/observability.md`.
 
@@ -45,10 +45,13 @@ lark-cli stdout
  │              ▼ [发送端: 非阻塞]                            ▼ [接收端: 后台 reader]
  │        send_message()                             session_reader()
  │              │                                    (首次消息时启动,
- │     ┌────────┼────────┐                            per-session 长驻)
- │     ▼        ▼        ▼                                  │
- │  /clear  /interrupt  普通消息                              │
- │  (移除    (SDK       set_sender()                        ▼
+ │     resolve_rich_content()                         per-session 长驻)
+ │     (非纯文本→可读文本)                                    │
+ │              │                                            │
+ │     ┌────────┼────────┐                                   │
+ │     ▼        ▼        ▼                                   │
+ │  /clear  /interrupt  普通消息                               │
+ │  (移除    (SDK       set_sender()                         ▼
  │  session) interrupt)  client.query()              while True:
  │                       pool.enqueue()            receive_response()
  │                            │                    peek_pending() → msg_id
@@ -69,11 +72,12 @@ lark-cli stdout
 
 **发送端 (`send_message`)：**
 
-- **5a. /clear 检测:** `src/handler.py:99-103` — 自行处理（调用 `pool.remove` 后直接回复），因 Claude Code 的 `/clear` 会被权限系统拦截。
-- **5b. /interrupt 检测:** `src/handler.py:106-117` — 调用 `pool.get_client()` 获取已有 client，执行 `client.interrupt()` 发送 SDK 控制信号中断当前任务。
-- **5c. Slash command 透传:** `src/handler.py:123-127` — `/` 开头消息原样作为 prompt，不加发送者前缀。
-- **5d. 名字解析:** `src/handler.py:130` — `_ensure_display_names()` 首次遇到新 session 时调用。
-- **5e. 非阻塞 query:** `src/handler.py:133-141` — `pool.get()` 获取 client → `client.query(prompt)` 仅写 stdin → `pool.enqueue_message()` 入队 FIFO。立即返回，不等响应。
+- **5a. 富消息解析:** `src/handler.py:92-95` — 调用 `resolve_rich_content(event)` 检测非纯文本消息类型（merge_forward/image/file/audio/video/sticker/media），返回可读文本替换原始 content。纯文本返回 None 不做处理。详见 `/llmdoc/architecture/lark-interaction.md` 3.5 节。
+- **5b. /clear 检测:** `src/handler.py:104-108` — 自行处理（调用 `pool.remove` 后直接回复），因 Claude Code 的 `/clear` 会被权限系统拦截。
+- **5c. /interrupt 检测:** `src/handler.py:111-122` — 调用 `pool.get_client()` 获取已有 client，执行 `client.interrupt()` 发送 SDK 控制信号中断当前任务。
+- **5d. Slash command 透传:** `src/handler.py:128-129` — `/` 开头消息原样作为 prompt，不加发送者前缀。
+- **5e. 名字解析:** `src/handler.py:135` — `_ensure_display_names()` 首次遇到新 session 时调用。
+- **5f. 非阻塞 query:** `src/handler.py:137-146` — `pool.get()` 获取 client → `client.query(prompt)` 仅写 stdin → `pool.enqueue_message()` 入队 FIFO。立即返回，不等响应。
 
 **接收端 (`session_reader`)：**
 

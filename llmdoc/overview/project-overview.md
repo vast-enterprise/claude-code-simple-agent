@@ -31,10 +31,10 @@ tripo-work-center/
 ├── src/
 │   ├── main.py          # 入口：事件循环、进程管理、信号处理、崩溃通知、HTTP server 启动
 │   ├── pool.py          # ClientPool：per-session 独立 client 池 + per-session FIFO 消息队列 + SessionStore 集成 + session resume
-│   ├── handler.py       # 发送端 send_message（非阻塞 query）+ 接收端 session_reader（后台读响应）+ /clear /interrupt + 名字解析
+│   ├── handler.py       # 发送端 send_message（非阻塞 query + 富消息解析）+ 接收端 session_reader（后台读响应）+ /clear /interrupt + 名字解析
 │   ├── session.py       # 调度器（SessionDispatcher）：直推 send_coro + per-session reader task 管理
 │   ├── permissions.py   # 工具调用权限门控（permission_gate），contextvars 隔离
-│   ├── lark.py          # 飞书交互封装（reaction、reply、用户名/群名解析）
+│   ├── lark.py          # 飞书交互封装（reaction、reply、用户名/群名解析、富消息解析）
 │   ├── config.py        # 配置加载 + 结构化日志 + NOTIFY_CONFIG
 │   ├── notify.py        # 飞书异常通知，60 秒同类防风暴
 │   ├── store.py         # Session 映射持久化（data/sessions.json）+ 历史归档（data/sessions_history.json），原子写入
@@ -69,7 +69,7 @@ pool.py ──→ config.py（log_debug, log_error）
    │
 handler.py ──→ config.py（OWNER_ID, BOT_NAME, log_debug）
    │──→ pool.py（ClientPool）
-   │──→ lark.py（add_reaction, remove_reaction, reply_message, resolve_user_name, resolve_chat_name）
+   │──→ lark.py（add_reaction, remove_reaction, reply_message, resolve_rich_content, resolve_user_name, resolve_chat_name）
    │──→ permissions（set_sender）
    │──→ metrics.py（MetricsCollector — record_message）
    │

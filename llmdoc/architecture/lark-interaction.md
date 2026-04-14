@@ -7,9 +7,9 @@
 
 ## 2. Core Components
 
-- `src/lark.py` (`add_reaction`, `remove_reaction`, `reply_message`, `resolve_user_name`, `resolve_chat_name`): 飞书 API 交互的唯一出口，全部为同步阻塞调用，无内部依赖（叶节点模块）。新增名字解析函数。
+- `src/lark.py` (`add_reaction`, `remove_reaction`, `reply_message`, `resolve_user_name`, `resolve_chat_name`, `resolve_rich_content`, `_fetch_merge_forward_content`, `_extract_post_text`, `_extract_message_text`): 飞书 API 交互 + 富消息解析的唯一出口。API 交互全部为同步阻塞调用。富消息解析模块将 merge_forward/image/file/audio/video/sticker/media 等非纯文本消息转换为可读文本。
 - `src/main.py` (`start_event_listener`): 启动 `lark-cli event +subscribe` 长驻子进程，以 NDJSON 格式输出事件流。
-- `src/handler.py` (`handle_message`, `_ensure_display_names`): 消费端，在消息处理流程中调用 `lark.py` 的函数完成表情反馈、消息回复和名字解析。
+- `src/handler.py` (`send_message`, `session_reader`, `_ensure_display_names`): 消费端，在消息处理流程中调用 `lark.py` 的函数完成富消息解析、表情反馈、消息回复和名字解析。`send_message` 在构建 prompt 之前调用 `resolve_rich_content()` 预处理非纯文本消息。
 
 ## 3. Execution Flow (LLM Retrieval Map)
 
@@ -53,7 +53,19 @@
 - **stdout**: `asyncio.subprocess.PIPE`，主循环逐行读取。
 - **stderr**: `asyncio.subprocess.DEVNULL`，丢弃。
 
-### 3.5 名字解析
+### 3.5 富消息解析
+
+将非纯文本飞书消息（merge_forward、image、file、audio、video、sticker、media）转换为 Claude 可理解的文本描述。
+
+- **入口:** `src/lark.py:185-216` (`resolve_rich_content`) — 检测 `event.message_type`，纯文本/post/interactive 返回 `None`（不需要额外解析），其他类型返回可读文本。
+- **调用时机:** `src/handler.py:92-95` — `send_message` 在构建 prompt 之前调用，若返回非 None 则替换原始 content。
+- **合并转发 (merge_forward):** `src/lark.py:191-199` — 通过 `message_type == "merge_forward"` 或内容标记（`_MERGE_FORWARD_MARKERS`）检测。调用 `_fetch_merge_forward_content()` 获取展开内容。
+- **合并转发展开:** `src/lark.py:152-182` (`_fetch_merge_forward_content`) — 执行 `lark-cli im +messages-mget --message-ids {id} --as bot --format json`，lark-cli 内置 merge_forward 展开，返回 `<forwarded_messages>` 标签格式的可读文本。
+- **Post 富文本提取:** `src/lark.py:82-118` (`_extract_post_text`) — 解析飞书 post 结构（多语言包 → paragraphs → elements），支持 text/a/at/emotion/code_block/img/media 标签。
+- **单条消息文本提取:** `src/lark.py:121-149` (`_extract_message_text`) — 按 `msg_type` 分发：text 取 `.text`，post 调用 `_extract_post_text`，image/file/audio/video/sticker/interactive 返回描述性标签。
+- **简单媒体类型:** `src/lark.py:202-213` — image/file/audio/video/sticker/media 直接返回 `[类型消息]` 占位符。
+
+### 3.6 名字解析
 
 通过 lark-cli 将飞书 ID 解析为可读名字，用于 Dashboard 显示：
 
