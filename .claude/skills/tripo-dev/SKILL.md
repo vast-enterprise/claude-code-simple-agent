@@ -13,6 +13,14 @@ description: |
 
 # Tripo 编码知识
 
+## 进入仓库须知
+
+**先读文档再翻代码**：进入任何代码仓库后，先读 `llmdoc/index.md` + `llmdoc/overview/` 全部文档。llmdoc 包含架构决策和模式约定，直接翻代码会遗漏这些上下文。
+
+**Worktree 中先装依赖**：在 worktree 中执行 `pnpm install` 后再跑 typecheck/lint。worktree 没有 node_modules 时，TypeScript 的类型诊断结果不可信——会报大量"找不到模块"的假错误。
+
+**代码位置与分支**：用 worktree 还是主工作区，取决于要修改的代码是否已合入 main。详见 `tripo-worktree` skill。
+
 ## 项目约定
 
 ### 新概念要对齐已有模式
@@ -62,6 +70,11 @@ description: |
 
 先测试后实现。详细方法论见 `superpowers:test-driven-development` skill。
 
-### 编码完成后
+### 完成 Checklist
 
-代码涉及新架构、新目录结构、新组件模式、API 变更时，使用 `tr:recorder` agent 更新 llmdoc。
+- lint + typecheck 通过
+- 测试已编写且通过（→ `superpowers:test-driven-development`）
+- 运行时验证有证据（→ `tripo-test` 证据标准）
+- 新增概念已对齐同类（命名、位置、注册方式一致）
+- 配套文件已更新：新 env var → .env.example + Zod schema + logEnv；新组件 → importMap 重新生成；新 collection → types 包同步
+- llmdoc 已同步（如涉及架构/模式/API 变更 → 使用 `tr:recorder` agent）
