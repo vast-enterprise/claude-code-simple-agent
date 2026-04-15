@@ -9,10 +9,7 @@
 
 1. **提议状态变更**（→ tripo-tables）：对应开发字段 → "进行中"
 
-2. **加载 `tripo-dev` skill 执行编码方法论**：
-   - 进入仓库、创建 worktree、读 llmdoc（§一）
-   - 先看 3 个同类、TDD、UI 组件集成闭环（§二）
-   - 运行时验证、llmdoc 同步（§三）
+2. **加载 `tripo-dev` skill**（从"编码前确认"开始执行）
 
 3. **实时更新 STATUS.md**（→ tripo-task-dirs）
 
@@ -20,6 +17,6 @@
 
 ## 如何定义完成
 
-- [ ] tripo-dev 完成 Checklist 全部通过（§3.2）
+- [ ] tripo-dev 完成 Checklist 全部通过
 - [ ] STATUS.md 已更新
 - [ ] 已提议阶段状态为"完成"

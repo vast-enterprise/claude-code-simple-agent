@@ -15,7 +15,7 @@
    - 提议状态变更为"提测中"（→ tripo-tables）
 
 3. **配合验收测试**：
-   - 修复发现的 Bug
+   - 发现问题时加载 `tripo-dev` skill（返工模式）修复代码
    - 更新 STATUS.md（→ tripo-task-dirs）
 
 4. **验收通过后**：
