@@ -48,6 +48,7 @@ class TestParseSessionLog:
                 "type": "assistant",
                 "message": {
                     "role": "assistant",
+                    "model": "claude-sonnet-4-6-20250514",
                     "content": [
                         {"type": "thinking", "thinking": "hmm"},  # 应跳过
                         {"type": "text", "text": "reply"},
@@ -60,11 +61,27 @@ class TestParseSessionLog:
         msgs = _parse_session_log(log)
         assert len(msgs) == 1
         assert msgs[0]["role"] == "assistant"
+        assert msgs[0]["model"] == "claude-sonnet-4-6-20250514"
         assert len(msgs[0]["blocks"]) == 2  # thinking 被跳过
         assert msgs[0]["blocks"][0] == {"type": "text", "text": "reply"}
         assert msgs[0]["blocks"][1] == {
             "type": "tool_use", "name": "Bash", "input": {"command": "ls"}, "id": "t1",
         }
+
+    def test_assistant_model_empty_when_missing(self, tmp_path):
+        """JSONL 中无 model 字段时，返回空字符串"""
+        log = self._write_jsonl(tmp_path, [
+            {
+                "type": "assistant",
+                "message": {
+                    "role": "assistant",
+                    "content": [{"type": "text", "text": "no model"}],
+                },
+                "timestamp": "T7",
+            },
+        ])
+        msgs = _parse_session_log(log)
+        assert msgs[0]["model"] == ""
 
     def test_tool_result_string_content(self, tmp_path):
         log = self._write_jsonl(tmp_path, [

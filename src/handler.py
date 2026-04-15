@@ -167,7 +167,7 @@ async def session_reader(
             log_debug(f"[{session_id}] reader: client 不存在，退出")
             return
 
-        reply_text = ""
+        reply_texts: list[str] = []
         reaction_id = None
         current_msg = None
         success = True
@@ -186,31 +186,36 @@ async def session_reader(
                         claude_session_saved = True
                     if reaction_id is None and current_msg:
                         reaction_id = add_reaction(current_msg["message_id"])
+                    # 每个 AssistantMessage 的文本收集为独立条目
+                    turn_text = ""
                     for block in msg.content:
                         if isinstance(block, TextBlock):
-                            reply_text += block.text
+                            turn_text += block.text
+                    if turn_text.strip():
+                        reply_texts.append(turn_text.strip())
 
                 elif isinstance(msg, ResultMessage):
                     if not claude_session_saved and msg.session_id:
                         log_debug(f"[{session_id}] claude session: {msg.session_id}")
                         pool.save_claude_session_id(session_id, msg.session_id)
-                    if msg.is_error and not reply_text:
-                        reply_text = "抱歉，处理时出了点问题。"
+                    if msg.is_error and not reply_texts:
+                        reply_texts.append("抱歉，处理时出了点问题。")
                         success = False
 
-                    # dequeue 一条，回复到该消息
+                    # dequeue 一条，逐条回复到该消息
                     if current_msg:
                         mid = current_msg["message_id"]
                         if reaction_id:
                             remove_reaction(mid, reaction_id)
-                        if reply_text.strip():
-                            reply_message(mid, reply_text.strip())
+                        for text in reply_texts:
+                            reply_message(mid, text)
                         if metrics:
-                            metrics.record_message(session_id, current_msg.get("content", ""), success, reply_text[:50])
+                            summary = reply_texts[0][:50] if reply_texts else ""
+                            metrics.record_message(session_id, current_msg.get("content", ""), success, summary)
                         pool.dequeue_message(session_id)
 
                     # 重置状态，准备处理下一条
-                    reply_text = ""
+                    reply_texts = []
                     reaction_id = None
                     current_msg = None
                     success = True

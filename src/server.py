@@ -99,6 +99,7 @@ def _parse_session_log(log_path: Path) -> list[dict]:
                         "role": "assistant",
                         "blocks": blocks,
                         "timestamp": timestamp,
+                        "model": msg.get("model", ""),
                     })
 
     return messages

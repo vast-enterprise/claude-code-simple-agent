@@ -12,7 +12,7 @@
 - `src/metrics.py` (`MetricsCollector`): 内存运行指标收集器。环形缓冲（`deque(maxlen=200)`）存最近消息摘要，跟踪 uptime、总消息数、错误率。
 - `src/server.py` (`start_server`, `_create_app`, `_parse_session_log`, `_get_claude_log_dir`, `_handle_history`, `_handle_history_conversation`): aiohttp HTTP API server（`127.0.0.1:8420`），提供 REST 端点、Dashboard、Session 详情页和历史记录页。conversation API 解析 Claude JSONL 日志。compact 端点直接调用 Claude Code `/compact` slash command。历史端点通过 store 读取归档记录。
 - `src/dashboard.html`: 管理后台（暗色主题，Tailwind CDN），状态卡片 + Session 表格 + 搜索过滤。Session ID 链接跳转到独立详情页，右上角「历史记录」链接跳转到历史页。
-- `src/session.html`: 独立 session 详情页，展示完整对话时间线（用户消息蓝色气泡 + Claude 回复 + 工具调用折叠展示），标题栏显示人名和群名。支持 `?history=<index>` 参数进入历史查看模式（隐藏删除按钮，返回链接指向历史页），底部有「直达底部」悬浮按钮。
+- `src/session.html`: 独立 session 详情页，展示完整对话时间线（用户消息蓝色气泡 + Claude 回复 + 工具调用折叠展示），标题栏显示人名和群名。assistant 消息头部显示紫色模型标签（`shortModelName()` 将 `claude-opus-4-6` 转为 `Opus 4.6`）。支持 `?history=<index>` 参数进入历史查看模式（隐藏删除按钮，返回链接指向历史页），底部有「直达底部」悬浮按钮。历史模式下 `sessionId` 可能为 null，`updateHeaderWithNames` 中有空值检查防止 `Cannot read properties of null` 错误。
 - `src/history.html`: 历史会话记录页（暗色主题，Tailwind CDN），展示归档 session 列表，支持搜索过滤（用户名、群名、session ID），按归档时间降序排列，点击「查看对话」跳转 session.html。
 - `src/lark.py` (`resolve_user_name`, `resolve_chat_name`): 通过 lark-cli 解析 open_id 为用户名、chat_id 为群名。
 - `src/handler.py` (`_ensure_display_names`): 首次遇到新 session 时调用名字解析并存入 store。
@@ -66,7 +66,7 @@
 | `/api/sessions/{id}/clear` | POST | 归档后断开并删除指定 session | `src/server.py:138-142` |
 | `/api/sessions/{id}/compact` | POST | 会话压缩（直接发 `/compact` 给 Claude Code） | `src/server.py:145-162` |
 
-- **3. Conversation API 解析:** `src/server.py:29-104` `_parse_session_log()` 纯函数解析 Claude JSONL 日志文件，提取用户文本、assistant blocks（text + tool_use）和 tool_result，跳过 thinking block，tool_result content 截断到 5000 字符。`_get_claude_log_dir()` 从 `config.ROOT` 推导 `~/.claude/projects/<encoded-path>/` 日志目录。
+- **3. Conversation API 解析:** `src/server.py:29-105` `_parse_session_log()` 纯函数解析 Claude JSONL 日志文件，提取用户文本、assistant blocks（text + tool_use）和 tool_result，跳过 thinking block，tool_result content 截断到 5000 字符。assistant 消息额外提取 `model` 字段（`msg.get("model", "")`，见 `src/server.py:102`），供 session 详情页展示模型标签。`_get_claude_log_dir()` 从 `config.ROOT` 推导 `~/.claude/projects/<encoded-path>/` 日志目录。
 - **4. 历史端点:** `src/server.py:198-245` 归档列表端点从 `pool._store.load_history()` 读取并过滤内部字段；历史对话端点通过索引定位归档记录，使用存储的 `claude_session_id` 读取 JSONL 日志，返回 sender_name/chat_name/archived_at 等元数据。
 - **5. 路由注册顺序:** `src/server.py:270-281` `/api/sessions/history` 必须在 `/api/sessions/{session_id}` 通配路由之前注册，否则 `history` 会被当作 session_id 匹配。
 - **6. 安全:** 仅绑定 `127.0.0.1`，不对外暴露。`_sanitize_sessions()` 过滤 `claude_session_id` 等内部字段。历史端点同样过滤 `claude_session_id`。

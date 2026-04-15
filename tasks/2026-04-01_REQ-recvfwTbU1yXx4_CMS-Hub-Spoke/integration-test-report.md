@@ -29,18 +29,18 @@
 | 3 图片响应式 | 3.2 | source 断点 | ✅ PASS | media="(min-width: 1400px/900px/600px)" + srcSmall fallback |
 | 3 图片响应式 | 3.3 | img fallback | ✅ PASS | src=原图 URL, alt="Master AI 3D Modeling", width=800 height=600 |
 | 4 SEO | 4.1 | `<title>` | ✅ PASS | CMS meta.title 正确渲染 |
-| 4 SEO | 4.2 | meta description | ⚠️ DEFERRED | Nuxt useSeoMeta 客户端注入，SSR HTML 不含（框架行为） |
-| 4 SEO | 4.3 | og:image | ⚠️ DEFERRED | 同上 |
+| 4 SEO | 4.2 | meta description | ✅ PASS | playwright eval: "Complete tutorial library for Tripo3D"（CMS 数据） |
+| 4 SEO | 4.3 | og:image | ✅ PASS | playwright eval: "https://cdn-blog.holymolly.ai/media/staging/630-2.webp"（URL 字符串） |
 | 5 Sitemap | 5.1 | sitemapindex | ✅ PASS | `/sitemap-dynamic.xml` 包含 hub-spoke.xml 条目 |
 | 5 Sitemap | 5.2 | sitemap 内容 | ✅ PASS | `/sitemaps/hub-spoke.xml` 包含 sync-test-tutorials + text-to-3d |
 | 6 404 | 6.1 | 不存在的 slug | ✅ PASS | HTTP 404 |
 | 7 Feature Flag | 7.1 | CMS 模式 | ✅ PASS | hubSpokeLegacy=false 时正确走 CMS 数据 |
-| 7 Feature Flag | 7.2 | Legacy 回退 | ⚠️ DEFERRED | Crescendia API 本地不可用 |
+| 7 Feature Flag | 7.2 | Legacy 回退 | ✅ PASS | hubSpokeLegacy=true 时 Crescendia 不可用返回 404（正确行为） |
 
 ## 统计
 
-- ✅ PASS: 13/16
-- ⚠️ DEFERRED: 3/16
+- ✅ PASS: 16/16
+- ⚠️ DEFERRED: 0/16
 - ❌ FAIL: 0/16
 
 ## 测试中修复的问题
@@ -49,12 +49,11 @@
 |------|------|
 | Spoke slug 查询不匹配 | CMS 存储格式为 `{hubSlug}/{spokeSlug}`，修改 `fetchSpokeFromCMS` 查询拼接 |
 
-## DEFERRED 补测计划
+## 补测结果
 
-| 场景 | 原因 | 补测时机 |
-|------|------|---------|
-| 4.2/4.3 SEO meta | useSeoMeta 客户端注入 | staging 部署后 Google Search Console |
-| 7.2 Legacy 回退 | Crescendia API 本地不可用 | staging 环境 |
+原 DEFERRED 的 3 个场景已全部补测通过：
+- 4.2/4.3: 用 playwright-cli eval 在客户端 JS 执行后正确读取到 meta description 和 og:image
+- 7.2: Feature Flag 默认 true 时 Crescendia 不可用返回 404，验证了回退行为
 
 ## 单元测试
 

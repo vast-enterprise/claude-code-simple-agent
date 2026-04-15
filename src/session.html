@@ -160,6 +160,17 @@ function jsonPretty(obj) {
   }
 }
 
+function shortModelName(model) {
+  if (!model) return "";
+  // claude-sonnet-4-6-20250514 → Sonnet 4.6
+  var match = model.match(/claude-(\w+)-(\d+)-(\d+)/);
+  if (match) {
+    var name = match[1].charAt(0).toUpperCase() + match[1].slice(1);
+    return name + " " + match[2] + "." + match[3];
+  }
+  return model;
+}
+
 // ── 状态管理 ──────────────────────────────────────────
 
 var params = new URLSearchParams(window.location.search);
@@ -292,9 +303,13 @@ function renderAssistantMessage(msg) {
     blocksHtml = '<div class="text-gray-200 whitespace-pre-wrap">' + escapeHtml(msg.content) + '</div>';
   }
 
+  var modelTag = msg.model
+    ? ' <span class="ml-2 px-1.5 py-0.5 rounded bg-purple-900/40 text-purple-300 text-[10px]">' + escapeHtml(shortModelName(msg.model)) + '</span>'
+    : '';
+
   return '<div class="flex justify-start">' +
     '<div class="bg-gray-800 border border-gray-700 rounded-lg px-4 py-3 max-w-4xl w-full">' +
-      '<div class="text-xs text-gray-400 mb-1">Claude \u00b7 ' + escapeHtml(formatTime(msg.timestamp)) + '</div>' +
+      '<div class="text-xs text-gray-400 mb-1">Claude \u00b7 ' + escapeHtml(formatTime(msg.timestamp)) + modelTag + '</div>' +
       blocksHtml +
     '</div>' +
   '</div>';
@@ -453,7 +468,7 @@ function updateHeaderWithNames() {
   if (name) {
     var label = name;
     if (chatName) label += " @ " + chatName;
-    else if (sessionId.startsWith("p2p_")) label += " \u79c1\u804a";
+    else if (sessionId && sessionId.startsWith("p2p_")) label += " \u79c1\u804a";
     document.getElementById("header-session-id").innerHTML =
       '<span class="text-lg">' + escapeHtml(label) + '</span>' +
       '<span class="text-gray-600 text-xs font-mono ml-3">' + escapeHtml(sessionId) + '</span>';

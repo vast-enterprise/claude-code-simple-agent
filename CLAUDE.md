@@ -35,7 +35,7 @@
 | `tripo-task-dirs` | 任务目录管理（创建→跟踪→归档） |
 | `tripo-release` | 前端发版（staging 部署 / production 发车上线） |
 | `tripo-cms` | CMS 内容操作（Payload REST API CRUD、媒体管理、数据回填、迁移） |
-| `tripo-bugfix` | Bug 修复流程（待创建） |
+| `tripo-bugfix` | 缺陷修复全流程（接收→录入→调查→修复→验证→PR→上线，7 步闭环） |
 
 ## 进入代码仓库的铁律
 
