@@ -90,8 +90,16 @@ description: |
 
 ## 相关文档
 
+### 流程支撑 skill（资源层）
 - `tripo-tables` skill - 表格结构、字段 ID、状态选项、发车流程
 - `tripo-repos` skill - 代码仓库注册表（路径、技术栈、部署信息）
 - `tripo-task-dirs` skill - 任务目录管理、状态跟踪、归档
 - `tripo-release` skill - 前端发版（staging / production）
+
+### 方法论 skill（步骤内加载）
+- `tripo-dev` skill - 编码方法论（步骤 6 加载）：先看3个同类、运行时验证、Pre-flight Check
+- `tripo-test` skill - 测试方法论（步骤 8 加载）：五类测试、工具-证据映射、计划先于执行
+- `tripo-diagnose` skill - 诊断方法论（异常处理时加载）：优先级阶梯、环境边界、失败回退
+
+### 参考
 - [references/commands.md](references/commands.md) - 命令速查

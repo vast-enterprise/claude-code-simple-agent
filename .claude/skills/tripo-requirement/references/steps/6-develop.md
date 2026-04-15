@@ -7,34 +7,19 @@
 
 ## 做什么
 
-1. **进入代码仓库**（→ tripo-repos）
+1. **提议状态变更**（→ tripo-tables）：对应开发字段 → "进行中"
 
-2. **创建 worktree**（→ tripo-worktree）
+2. **加载 `tripo-dev` skill 执行编码方法论**：
+   - 进入仓库、创建 worktree、读 llmdoc（§一）
+   - 先看 3 个同类、TDD、UI 组件集成闭环（§二）
+   - 运行时验证、llmdoc 同步（§三）
 
-3. **阅读项目文档**：
-   - 读取 llmdoc/index.md 了解项目
+3. **实时更新 STATUS.md**（→ tripo-task-dirs）
 
-4. **编码实现**：
-   - 编写代码
-   - 编写测试
-
-5. **实时更新 STATUS.md**（→ tripo-task-dirs）
-
-6. **提议阶段状态变更**（→ tripo-tables）：
-   - 开始时：对应开发字段 → "进行中"
-   - 完成时：对应开发字段 → "完成"
-
-7. **更新 llmdoc（如需要）**：
-   - 使用 `tr:recorder` agent 更新项目文档
-   - 触发条件：代码涉及新架构、新目录结构、新组件模式、API 变更
-   - **注意**：llmdoc 更新不是强制步骤，需按需执行
+4. **提议状态变更**（→ tripo-tables）：对应开发字段 → "完成"
 
 ## 如何定义完成
 
-- [ ] worktree 已创建
-- [ ] 代码已编写
-- [ ] 测试已编写
-- [ ] lint、typecheck 通过
-- [ ] llmdoc 已更新（如涉及架构/模式变更）
+- [ ] tripo-dev 完成 Checklist 全部通过（§3.2）
 - [ ] STATUS.md 已更新
 - [ ] 已提议阶段状态为"完成"

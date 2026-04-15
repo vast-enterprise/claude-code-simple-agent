@@ -35,6 +35,14 @@ fe-tripo-homepage (前端) ──API调用──▶ tripo-cms (CMS后台) ──
 - 类型包 `@tripo3d/cms-types` 发布到 GitHub Packages
 - llmdoc 入口：`llmdoc/index.md`
 
+### Dev 启动注意事项
+
+- 分支检查：PR open → 从 worktree 启动；PR merged → 从主工作区启动
+- 依赖安装：`pnpm install`（worktree 切换后必须重装）
+- 环境变量：确认 `.env` 存在，关键变量（DATABASE_URI、PAYLOAD_SECRET）已配置
+- 数据库选择：开发用 `payload-tripo-cms-dev`，生产用 `tripo-cms`（连错库会污染数据）
+- 启动命令：`pnpm dev`（默认端口 3000）
+
 | 环境 | 域名 | GitHub Action | K8s Deployment | 镜像 Tag |
 |------|------|---------------|----------------|----------|
 | staging | `https://cms-staging.itripo3d.com/` | `deploy-staging.yml` | `tripo-cms -n tripo` | `staging-{sha}` |
@@ -48,6 +56,13 @@ fe-tripo-homepage (前端) ──API调用──▶ tripo-cms (CMS后台) ──
 - AI 3D 生成、博客系统、多语言支持（7种语言）
 - 混合内容系统（本地 JSON + 阿里云 OSS + Payload CMS）
 - llmdoc 入口：`llmdoc/index.md`
+
+### Dev 启动注意事项
+
+- devServer 默认 HTTPS（nuxt.config.ts 配了 cert/key），本地联调需加 `--no-https`
+- devServer 默认 host 为 `local.tripo3d.ai`，本地需加 `--host localhost`
+- 完整启动命令：`pnpm dev --host localhost --port 3020 --no-https`
+- 跨仓库联调时需 `NUXT_CMS_INTERNAL_URL=http://localhost:3000`（指向 CMS）
 
 | 环境 | 域名 | GitHub Action | K8s Deployment | 镜像 Tag |
 |------|------|---------------|----------------|----------|
