@@ -68,11 +68,9 @@ description: |
 
 ### 2.1 TDD：先测试后实现
 
-```
-1. 写测试（RED）→ 运行，应该失败
-2. 写最小实现（GREEN）→ 运行，应该通过
-3. 重构（IMPROVE）→ 运行，仍然通过
-```
+→ 加载 `superpowers:test-driven-development` skill 获取完整 TDD 方法论。
+
+核心循环：RED（写失败测试）→ GREEN（最小实现）→ IMPROVE（重构）
 
 ### 2.2 UI 组件的集成闭环
 
@@ -93,27 +91,9 @@ description: |
 └── 4. 运行时验证（见下方"什么算完成"）
 ```
 
-### 2.3 启动服务的 Pre-flight Check
+### 2.3 启动服务
 
-启动本地服务前必须确认：
-
-```
-启动服务
-│
-├── 1. 代码在正确位置？
-│   ├── 检查 PR 状态 → open = worktree, merged = 主分支
-│   └── git branch 确认当前分支
-│
-├── 2. 依赖已安装？
-│   └── pnpm install（worktree 切换后必须重装）
-│
-├── 3. 环境变量正确？
-│   └── .env 文件存在且关键变量已配置
-│   └── 跨仓库联调：确认服务间连接变量（如 NUXT_CMS_INTERNAL_URL）
-│
-└── 4. 启动参数正确？
-    └── 查 tripo-repos skill 获取仓库的 dev 启动注意事项
-```
+→ 查 `tripo-repos` skill 各仓库的 **Dev 启动注意事项**（含分支检查、依赖安装、环境变量、启动参数）。
 
 ---
 
@@ -140,7 +120,8 @@ description: |
 - [ ] lint 通过
 - [ ] typecheck 通过
 - [ ] 测试已编写且通过
-- [ ] 运行时验证已执行（截图/curl/测试输出）
+- [ ] 运行时验证已执行（证据标准 → tripo-test §3.2）
 - [ ] 新增概念已对齐 3 个同类（命名、位置、注册方式）
 - [ ] 配套文件已更新（.env.example、logEnv、importMap 等）
+- [ ] llmdoc 同步（如涉及架构/模式/API 变更 → 使用 tr:recorder agent）
 ```

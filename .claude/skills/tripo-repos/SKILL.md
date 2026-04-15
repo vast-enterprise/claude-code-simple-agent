@@ -35,6 +35,14 @@ fe-tripo-homepage (前端) ──API调用──▶ tripo-cms (CMS后台) ──
 - 类型包 `@tripo3d/cms-types` 发布到 GitHub Packages
 - llmdoc 入口：`llmdoc/index.md`
 
+### Dev 启动注意事项
+
+- 分支检查：PR open → 从 worktree 启动；PR merged → 从主工作区启动
+- 依赖安装：`pnpm install`（worktree 切换后必须重装）
+- 环境变量：确认 `.env` 存在，关键变量（DATABASE_URI、PAYLOAD_SECRET）已配置
+- 数据库选择：开发用 `payload-tripo-cms-dev`，生产用 `tripo-cms`（连错库会污染数据）
+- 启动命令：`pnpm dev`（默认端口 3000）
+
 | 环境 | 域名 | GitHub Action | K8s Deployment | 镜像 Tag |
 |------|------|---------------|----------------|----------|
 | staging | `https://cms-staging.itripo3d.com/` | `deploy-staging.yml` | `tripo-cms -n tripo` | `staging-{sha}` |
