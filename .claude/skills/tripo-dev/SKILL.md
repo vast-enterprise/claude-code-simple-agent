@@ -23,22 +23,9 @@ description: |
 
 **真实案例**：翻译插件加 `OPENAI_API_KEY` 时直接 `process.env` 读取，没看到项目用 Zod schema 统一管理 env var。结果：无类型校验、.env.example 没更新、启动日志不输出——后续调 401 排查困难。如果先看了同模块的 env 是怎么加的，一步到位。
 
-### UI 组件有隐藏的集成 gap
-
-在 Payload CMS 和 Nuxt 中，写完组件文件 ≠ 组件能在页面上渲染。中间有框架要求的注册步骤，每一步都可能无声失败：
-
-- **Payload**：组件必须在 `collection.admin.components` 中注册 → 路径格式去掉 `src/` 前缀 → `payload generate:importmap` 重新生成
-- **Nuxt**：composable/plugin 必须在正确目录 → auto-import 才生效
-
-**真实案例**：翻译插件写了 5 个 `.client.tsx` 文件，在 task 中标记"完成"。但 plugin index.ts 没有把组件注入 admin.components，编辑页上什么也不渲染。直到 UI 验证阶段才暴露。
-
-**判断标准**：写完 UI 组件后，对照已有组件的注册方式检查自己有没有漏步骤——看 3 个同类怎么做的。
-
 ### 启动服务前查 tripo-repos
 
-每个仓库有自己的启动注意事项（HTTPS 配置、host 设置、数据库选择等），都记录在 `tripo-repos` skill 中各仓库的 "Dev 启动注意事项" 小节。启动前查一下，不要凭记忆。
-
-**真实案例**：PR 未合入就从主分支启动服务，主分支上没有新功能代码，启动了也验收不了。
+每个仓库有自己的启动注意事项（HTTPS 配置、host 设置、数据库选择等），记录在 `tripo-repos` skill 各仓库的 "Dev 启动注意事项" 中。启动前查一下，不要凭记忆。
 
 ## 质量标准
 
