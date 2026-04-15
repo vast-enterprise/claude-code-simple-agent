@@ -97,8 +97,8 @@ description: |
 - `tripo-release` skill - 前端发版（staging / production）
 
 ### 方法论 skill（步骤内加载）
-- `tripo-dev` skill - 编码方法论（步骤 6 加载）：先看3个同类、运行时验证、Pre-flight Check
-- `tripo-test` skill - 测试方法论（步骤 8 加载）：五类测试、工具-证据映射、计划先于执行
+- `tripo-dev` skill - 编码方法论（步骤 6 加载）：先理解再编码、运行时验证、完成 Checklist
+- `tripo-test` skill - 测试方法论（步骤 8 加载）：工具-证据映射、证据先贴结论、计划先于执行
 - `tripo-diagnose` skill - 诊断方法论（异常处理时加载）：优先级阶梯、环境边界、失败回退
 
 ### 参考
