@@ -52,6 +52,5 @@ description: |
 - lint + typecheck 通过
 - 测试已编写且通过（→ `superpowers:test-driven-development`）
 - 运行时验证有证据（→ `tripo-test` 证据标准）
-- 新增概念已对齐同类（命名、位置、注册方式一致）
-- 配套文件已更新：新 env var → .env.example + Zod schema + logEnv；新组件 → importMap 重新生成；新 collection → types 包同步
+- 配套文件已更新（添加新概念时，检查同类实现更新了哪些配套文件，一并更新）
 - llmdoc 已同步（如涉及架构/模式/API 变更 → 使用 `tr:recorder` agent）
