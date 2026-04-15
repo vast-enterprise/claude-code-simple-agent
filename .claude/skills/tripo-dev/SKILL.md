@@ -21,8 +21,6 @@ description: |
 
 **Worktree 注意**：worktree 中必须先 `pnpm install` 再跑 typecheck/lint，否则 TS 诊断会报大量假错误（找不到模块）。代码位置选择见 `tripo-worktree` skill。
 
-**真实案例**：翻译插件加 `OPENAI_API_KEY` 时直接 `process.env` 读取，没看到项目用 Zod schema 统一管理 env var。结果：无类型校验、.env.example 没更新、启动日志不输出——后续调 401 排查困难。如果先看了同模块的 env 是怎么加的，一步到位。
-
 ### 启动服务前查 tripo-repos
 
 每个仓库有自己的启动注意事项（HTTPS 配置、host 设置、数据库选择等），记录在 `tripo-repos` skill 各仓库的 "Dev 启动注意事项" 中。启动前查一下，不要凭记忆。
@@ -36,8 +34,6 @@ description: |
 | API endpoint | 文件存在、typecheck 通过 | curl 返回正确响应 |
 | UI 组件 | 文件存在、no lint error | 启动服务 → 页面上能看到 → 截图 |
 | 数据处理 | 逻辑写完 | 测试通过 → 贴输出 |
-
-**真实案例**：翻译 UI 组件写了但没注入 admin panel，标记"完成"。代码存在但运行时不可见。
 
 ### 证据标准
 
