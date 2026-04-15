@@ -49,6 +49,13 @@ fe-tripo-homepage (前端) ──API调用──▶ tripo-cms (CMS后台) ──
 - 混合内容系统（本地 JSON + 阿里云 OSS + Payload CMS）
 - llmdoc 入口：`llmdoc/index.md`
 
+### Dev 启动注意事项
+
+- devServer 默认 HTTPS（nuxt.config.ts 配了 cert/key），本地联调需加 `--no-https`
+- devServer 默认 host 为 `local.tripo3d.ai`，本地需加 `--host localhost`
+- 完整启动命令：`pnpm dev --host localhost --port 3020 --no-https`
+- 跨仓库联调时需 `NUXT_CMS_INTERNAL_URL=http://localhost:3000`（指向 CMS）
+
 | 环境 | 域名 | GitHub Action | K8s Deployment | 镜像 Tag |
 |------|------|---------------|----------------|----------|
 | staging | `https://web-testing.tripo3d.ai` | `staging.yaml` | `tripo-feature-landing -n tripo` | `staging-{sha}` |
