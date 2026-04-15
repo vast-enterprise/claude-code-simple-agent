@@ -43,10 +43,14 @@ description: |
 
 先测试后实现。详细方法论见 `superpowers:test-driven-development` skill。
 
+### 文档同步
+
+代码涉及架构变更、新目录结构、新组件模式、API 变更时，使用 `tr:recorder` agent 更新仓库的 llmdoc。llmdoc 是下次会话理解项目的入口——代码改了但文档没跟上，等于给未来的自己挖坑。
+
 ### 完成 Checklist
 
 - lint + typecheck 通过
 - 测试已编写且通过（→ `superpowers:test-driven-development`）
 - 运行时验证有证据（→ `tripo-test` 证据标准）
 - 配套文件已更新（添加新概念时，检查同类实现更新了哪些配套文件，一并更新）
-- llmdoc 已同步（如涉及架构/模式/API 变更 → 使用 `tr:recorder` agent）
+- llmdoc 已同步（如涉及架构/模式/API 变更）
