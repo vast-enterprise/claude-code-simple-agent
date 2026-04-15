@@ -13,25 +13,15 @@ description: |
 
 # Tripo 编码知识
 
-## 进入仓库须知
+## 先理解再编码
 
-**先读文档再翻代码**：进入任何代码仓库后，先读 `llmdoc/index.md` + `llmdoc/overview/` 全部文档。llmdoc 包含架构决策和模式约定，直接翻代码会遗漏这些上下文。
+编码前必须先理解目标仓库的现有代码。每个仓库有自己的约定（目录结构、抽象层、注册方式），这些约定记录在 llmdoc 中，也体现在已有代码里。跳过理解直接写，大概率会绕过已有抽象、遗漏配套更新、或路径格式不对。
 
-**Worktree 中先装依赖**：在 worktree 中执行 `pnpm install` 后再跑 typecheck/lint。worktree 没有 node_modules 时，TypeScript 的类型诊断结果不可信——会报大量"找不到模块"的假错误。
+**怎么理解**：先读 `llmdoc/index.md` + `llmdoc/overview/`，然后看要改动的模块周围的代码是怎么组织的。llmdoc 告诉你架构决策，现有代码告诉你落地模式。
 
-**代码位置与分支**：用 worktree 还是主工作区，取决于要修改的代码是否已合入 main。详见 `tripo-worktree` skill。
+**Worktree 注意**：worktree 中必须先 `pnpm install` 再跑 typecheck/lint，否则 TS 诊断会报大量假错误（找不到模块）。代码位置选择见 `tripo-worktree` skill。
 
-## 项目约定
-
-### 新概念要对齐已有模式
-
-在项目中添加新的东西（env var、组件、endpoint、hook、field……）之前，先 grep 3 个已有的同类实现，理解项目的既定模式，然后沿用。
-
-**为什么**：项目中有些抽象层从代码结构上不显眼，但绕过它们会埋坑。
-
-**真实案例**：翻译插件需要 `OPENAI_API_KEY`，直接 `process.env.OPENAI_API_KEY` 读取。但项目所有 env var 都走 Zod schema（`src/constants/env.ts`）+ `.env.example` + `logEnv` 启动日志。绕过 Zod 导致：无类型校验、.env.example 没更新、启动日志不输出这个变量——后续调 401 时排查困难。
-
-**判断标准**：如果你要加的东西在项目里已有 3 个以上同类，必须对齐；如果是全新品类，需要和用户讨论规范。
+**真实案例**：翻译插件加 `OPENAI_API_KEY` 时直接 `process.env` 读取，没看到项目用 Zod schema 统一管理 env var。结果：无类型校验、.env.example 没更新、启动日志不输出——后续调 401 排查困难。如果先看了同模块的 env 是怎么加的，一步到位。
 
 ### UI 组件有隐藏的集成 gap
 
