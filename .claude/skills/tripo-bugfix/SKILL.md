@@ -1,7 +1,7 @@
 ---
 name: tripo-bugfix
 description: |
-  Tripo 缺陷修复全流程：接收→录入→调查→修复→验证→PR→上线，7 步闭环。
+  Tripo 缺陷修复全流程：接收→录入→调查→修复→PR→闭环→验收→上线，8 步闭环。
   用户说"修 bug"/"有 bug"/"出问题了"/"不显示"/"报错"时触发本 skill。
   本 skill 是缺陷修复的流程编排层，tripo-repos/tripo-tables/tripo-worktree 等是执行层。
 
@@ -26,10 +26,10 @@ description: |
 ## 流程概览
 
 ```
-1.接收 → 2.录入 → 3.调查 → 4.修复 → 5.验证 → 6.PR → 7.上线
-   │        │        │        │        │       │       │
- 理解问题   Bug表    定位根因  worktree  staging  创建PR  发车
-                    报告+wiki          本地+staging   🔔通知
+1.接收 → 2.录入 → 3.调查 → 4.修复 → 5.PR → 6.闭环 → 7.验收 → 8.上线
+   │        │        │        │        │       │        │        │
+ 理解问题   Bug表    定位根因  worktree  创建PR  CR+测试   review   发车
+                    报告+wiki                   🔔通知    合并
                     🔔通知
 ```
 
@@ -51,9 +51,10 @@ description: |
 | 2 | 录入 Bug 管理表 | [steps/2-record.md](references/steps/2-record.md) |
 | 3 | 调查 & 定位根因 | [steps/3-investigate.md](references/steps/3-investigate.md) |
 | 4 | 修复 | [steps/4-fix.md](references/steps/4-fix.md) |
-| 5 | 验证 | [steps/5-verify.md](references/steps/5-verify.md) |
-| 6 | 创建 PR | [steps/6-pr.md](references/steps/6-pr.md) |
-| 7 | 上线 | [steps/7-release.md](references/steps/7-release.md) |
+| 5 | 创建 PR | [steps/5-pr.md](references/steps/5-pr.md) |
+| 6 | 自动化闭环 | [steps/6-test.md](references/steps/6-test.md) |
+| 7 | 用户验收 | [steps/7-acceptance.md](references/steps/7-acceptance.md) |
+| 8 | 发布上线 | [steps/8-release.md](references/steps/8-release.md) |
 
 ## 状态同步规则
 
@@ -73,7 +74,7 @@ Bug: <描述>
 | 步骤 | 触发时机 |
 |------|---------|
 | 3 | Bug 定位报告输出 + Wiki 同步后 |
-| 6 | PR 创建后 |
+| 6 | Code Review + 集成测试全部通过后 |
 
 ## 铁律（违反 = 3.25）
 
