@@ -73,7 +73,7 @@ description: |
 
 ## 飞书通知阻塞点
 
-流程中有 4 个阻塞点，通知后必须暂停等待用户确认（→ tripo-tables，notification.md）：
+流程中有 4 个阻塞点，通知后必须暂停等待用户确认（→ tripo-notify）：
 
 | 步骤 | 触发时机 |
 |------|---------|
@@ -91,6 +91,7 @@ description: |
 ## 相关文档
 
 ### 流程支撑 skill（资源层）
+- `tripo-notify` skill - 飞书主动通知（通知对象、渠道规则、节点模板）
 - `tripo-tables` skill - 表格结构、字段 ID、状态选项、发车流程
 - `tripo-repos` skill - 代码仓库注册表（路径、技术栈、部署信息）
 - `tripo-task-dirs` skill - 任务目录管理、状态跟踪、归档

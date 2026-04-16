@@ -72,7 +72,7 @@
 
 **以上 checklist 必须逐项确认全部 ✅ 后才可发送通知。缺任何一项即禁止通知。**
 
-发送飞书通知（→ tripo-tables，notification.md 节点 3）。
+发送飞书通知（→ tripo-notify，节点 R3）。
 
 通知后**暂停**，等待用户验收。
 

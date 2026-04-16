@@ -24,7 +24,7 @@
 
 3. **更新 STATUS.md**（→ tripo-task-dirs）
 
-4. **飞书通知用户**（→ tripo-tables，notification.md 节点 2）：
+4. **飞书通知用户**（→ tripo-notify，节点 R2）：
    通知后**暂停**，等待用户确认。
 
 5. **提议状态变更**：
