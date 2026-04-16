@@ -26,16 +26,32 @@
 
 ## Skills 目录
 
+### 流程编排层
+
 | Skill | 用途 |
 |-------|------|
-| `tripo-requirement` | 需求开发全流程（录入→评审→开发→PR→上线） |
-| `tripo-tables` | 飞书多维表格全操作（状态流转、字段查询、用户需求查询、发车流程、通知模板） |
+| `tripo-requirement` | 需求开发全流程（10 步：接收→录入→评审→执行→技评→开发→PR→闭环→验收→上线） |
+| `tripo-bugfix` | 缺陷修复全流程（8 步：接收→录入→调查→修复→PR→闭环→验收→上线） |
+| `tripo-release` | 前端发版（staging 部署 / production 发车上线） |
+
+### 方法论层
+
+| Skill | 用途 |
+|-------|------|
+| `tripo-dev` | 编码层（编码前确认、质量标准、完成 Checklist）——被 requirement/bugfix 调用 |
+| `tripo-test` | 集成测试方法论（测试计划标准、工具选型、证据要求） |
+| `tripo-diagnose` | 问题诊断方法论（优先级阶梯、环境边界、失败回退） |
+
+### 资源层
+
+| Skill | 用途 |
+|-------|------|
+| `tripo-notify` | 飞书主动通知（通知对象、渠道规则、各流程通知节点） |
+| `tripo-tables` | 飞书多维表格全操作（状态流转、字段查询、用户需求查询、发车流程） |
 | `tripo-repos` | 仓库注册表（路径、技术栈、部署信息） |
 | `tripo-worktree` | worktree 全生命周期（创建→使用→清理） |
 | `tripo-task-dirs` | 任务目录管理（创建→跟踪→归档） |
-| `tripo-release` | 前端发版（staging 部署 / production 发车上线） |
 | `tripo-cms` | CMS 内容操作（Payload REST API CRUD、媒体管理、数据回填、迁移） |
-| `tripo-bugfix` | 缺陷修复全流程（接收→录入→调查→修复→验证→PR→上线，7 步闭环） |
 
 ## 进入代码仓库的铁律
 
