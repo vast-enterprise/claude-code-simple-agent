@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from src.handler import should_respond, send_message, session_reader, compute_session_id, BOT_MENTION
+from src.handler import should_respond, send_message, session_reader, compute_session_id, _build_prompt, BOT_MENTION
 from src.config import OWNER_ID
 from src.pool import ClientPool
 from claude_agent_sdk.types import AssistantMessage, ResultMessage, TextBlock
@@ -84,6 +84,53 @@ def _event(content="hello", sender_id=None, chat_type="p2p"):
         "sender_id": sender_id or OWNER_ID,
         "chat_type": chat_type,
     }
+
+
+class TestBuildPrompt:
+    """_build_prompt: 构造带发送者上下文的 prompt"""
+
+    def _pool_with_store(self, session_data: dict):
+        pool = MagicMock()
+        pool._store.load_all.return_value = session_data
+        return pool
+
+    def test_owner_p2p_with_name(self):
+        pool = self._pool_with_store({"p2p_owner": {"sender_name": "郭凯南"}})
+        event = {"sender_id": OWNER_ID, "chat_type": "p2p", "chat_id": ""}
+        result = _build_prompt(pool, event, "p2p_owner", "你好")
+        assert "所有者" in result
+        assert "郭凯南" in result
+        assert OWNER_ID in result
+        assert "私聊" in result
+        assert "你好" in result
+
+    def test_colleague_group_with_names(self):
+        pool = self._pool_with_store({
+            "group_oc_xyz_ou_def": {"sender_name": "张三", "chat_name": "CMS群"},
+        })
+        event = {"sender_id": "ou_def", "chat_type": "group", "chat_id": "oc_xyz"}
+        result = _build_prompt(pool, event, "group_oc_xyz_ou_def", "帮我查")
+        assert "同事" in result
+        assert "张三" in result
+        assert "ou_def" in result
+        assert "CMS群" in result
+        assert "oc_xyz" in result
+
+    def test_no_store_fallback(self):
+        pool = MagicMock()
+        pool._store = None
+        event = {"sender_id": "ou_new", "chat_type": "p2p", "chat_id": ""}
+        result = _build_prompt(pool, event, "p2p_ou_new", "测试")
+        assert "同事" in result
+        assert "ou_new" in result
+        assert "测试" in result
+
+    def test_group_without_chat_name(self):
+        pool = self._pool_with_store({"group_oc_abc_ou_x": {}})
+        event = {"sender_id": "ou_x", "chat_type": "group", "chat_id": "oc_abc"}
+        result = _build_prompt(pool, event, "group_oc_abc_ou_x", "hi")
+        assert "群聊" in result
+        assert "oc_abc" in result
 
 
 class TestSendMessage:

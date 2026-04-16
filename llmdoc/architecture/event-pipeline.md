@@ -9,7 +9,7 @@
 
 - `src/main.py` (`main`, `start_event_listener`, `_read_or_shutdown`, `_crash_hook`): 程序入口，负责事件循环、lark-cli 进程组管理、asyncio-native 信号处理、ClientPool + SessionDispatcher + MetricsCollector + SessionStore + HTTP server 集成、崩溃/断连通知。
 - `src/pool.py` (`ClientPool`): per-session 独立 `ClaudeSDKClient` 池 + per-session FIFO 消息队列。惰性创建，per-session `asyncio.Lock` 防并发重复创建，集成 `SessionStore` 持久化。`get()` 创建新 client 时自动检查 store 中的 `claude_session_id`，若存在则通过 `dataclasses.replace(options, resume=stored_sid)` 实现重启后 session 恢复。FIFO 队列 (`_pending`) 用于对齐 query → response → 飞书回复映射。
-- `src/handler.py` (`should_respond`, `send_message`, `session_reader`, `compute_session_id`, `_ensure_display_names`): 消息过滤、session ID 计算、名字解析。`send_message` 是发送端（富消息解析 + 非阻塞 query + 入队 FIFO），`session_reader` 是接收端（持续读取响应 + 回复飞书 + 管理 reaction 生命周期）。自行处理 `/clear` 和 `/interrupt`，其他 slash commands 原样透传给 Claude Code。
+- `src/handler.py` (`should_respond`, `send_message`, `session_reader`, `compute_session_id`, `_ensure_display_names`, `_build_prompt`): 消息过滤、session ID 计算、名字解析、prompt 构建。`_build_prompt` 构造带发送者上下文的 prompt（角色·名字 + open_id + 场景·chat_id），供 Claude 既能识别发送者身份又能拿到 ID 用于后续 API 交互。`send_message` 是发送端（富消息解析 + prompt 构建 + 非阻塞 query + 入队 FIFO），`session_reader` 是接收端（持续读取响应 + 回复飞书 + 管理 reaction 生命周期）。自行处理 `/clear` 和 `/interrupt`，其他 slash commands 原样透传给 Claude Code。
 - `src/session.py` (`SessionDispatcher`): 调度器，直接 await send_coro（非阻塞），首次消息时启动 per-session reader task。Reader task 随 session 生命周期存在。
 - `src/permissions.py` (`permission_gate`, `set_sender`, `get_sender`, `_current_sender_id`): 工具调用权限门控回调，通过 `contextvars.ContextVar` 传递 sender 身份，支持并发隔离。
 - `src/lark.py` (`add_reaction`, `remove_reaction`, `reply_message`, `_reply_plain_text`, `resolve_user_name`, `resolve_chat_name`, `resolve_rich_content`, `download_message_image`, `_get_message_image_key`, `_resolve_inline_images`): 飞书交互叶节点 + 富消息解析 + 图片下载模块。API 交互全部为同步 `subprocess.run` 调用 `lark-cli`。消息回复使用 markdown 格式（`lark-cli im +messages-reply --markdown`），失败自动降级纯文本。富消息解析将 merge_forward/image/file/audio/video/sticker/media 转为可读文本，图片类消息自动下载到 `data/images/` 并返回文件路径引用。详见 `/llmdoc/architecture/lark-interaction.md` 3.2-3.6 节。
@@ -72,23 +72,24 @@ lark-cli stdout
 
 **发送端 (`send_message`)：**
 
-- **5a. 富消息解析:** `src/handler.py:92-95` — 调用 `resolve_rich_content(event)` 检测非纯文本消息类型（merge_forward/image/file/audio/video/sticker/media），返回可读文本替换原始 content。纯文本返回 None 不做处理。图片类消息会自动下载到 `data/images/` 并返回文件路径引用。详见 `/llmdoc/architecture/lark-interaction.md` 3.5-3.6 节。
-- **5b. /clear 检测:** `src/handler.py:104-108` — 自行处理（调用 `pool.remove` 后直接回复），因 Claude Code 的 `/clear` 会被权限系统拦截。
-- **5c. /interrupt 检测:** `src/handler.py:111-122` — 调用 `pool.get_client()` 获取已有 client，执行 `client.interrupt()` 发送 SDK 控制信号中断当前任务。
-- **5d. Slash command 透传:** `src/handler.py:128-129` — `/` 开头消息原样作为 prompt，不加发送者前缀。
-- **5e. 名字解析:** `src/handler.py:135` — `_ensure_display_names()` 首次遇到新 session 时调用。
-- **5f. 非阻塞 query:** `src/handler.py:137-146` — `pool.get()` 获取 client → `client.query(prompt)` 仅写 stdin → `pool.enqueue_message()` 入队 FIFO。立即返回，不等响应。
+- **5a. 富消息解析:** `src/handler.py:126-128` — 调用 `resolve_rich_content(event)` 检测非纯文本消息类型（merge_forward/image/file/audio/video/sticker/media），返回可读文本替换原始 content。纯文本返回 None 不做处理。图片类消息会自动下载到 `data/images/` 并返回文件路径引用。详见 `/llmdoc/architecture/lark-interaction.md` 3.5-3.6 节。
+- **5b. /clear 检测:** `src/handler.py:137-141` — 自行处理（调用 `pool.remove` 后直接回复），因 Claude Code 的 `/clear` 会被权限系统拦截。
+- **5c. /interrupt 检测:** `src/handler.py:144-155` — 调用 `pool.get_client()` 获取已有 client，执行 `client.interrupt()` 发送 SDK 控制信号中断当前任务。
+- **5d. Slash command 透传:** `src/handler.py:164-165` — `/` 开头消息原样作为 prompt，不加发送者前缀。
+- **5e. 名字解析:** `src/handler.py:160` — `_ensure_display_names()` 首次遇到新 session 时调用。
+- **5f. Prompt 构建:** `src/handler.py:167` — `_build_prompt()` 构造带发送者上下文的 prompt，格式为 `[角色·名字 (open_id)] 在场景中说：内容`。角色区分所有者/同事，场景区分私聊/群聊（含群名和 chat_id）。名字和群名从 store 读取（由 5e 步骤提前解析）。
+- **5g. 非阻塞 query:** `src/handler.py:169-178` — `pool.get()` 获取 client → `client.query(prompt)` 仅写 stdin → `pool.enqueue_message()` 入队 FIFO。立即返回，不等响应。
 
 **接收端 (`session_reader`)：**
 
-- **6. 持续读取:** `src/handler.py:164-231` — `while True` 循环，`async for msg in client.receive_response()` 流式读取。
-- **6a. FIFO 匹配:** `src/handler.py:179-180` — `pool.peek_pending()` 从队头获取当前处理的飞书 message_id（`current_msg`）。
-- **6b. Claude session 持久化:** `src/handler.py:183-186` — 首次 `AssistantMessage.session_id` 存入 store。
-- **6c. Reaction 生命周期:** `src/handler.py:187-188` — `AssistantMessage` 时 `add_reaction`，`ResultMessage` 时 `remove_reaction`。
-- **6d. 分段发送:** `src/handler.py:170` — `reply_texts: list[str]` 收集每个 `AssistantMessage` turn 的文本。每个 `AssistantMessage` 的 TextBlock 拼成 `turn_text`，非空则 append 进数组。`ResultMessage` 时遍历数组逐条 `reply_message` 回复飞书。见 `src/handler.py:189-195`（收集）、`src/handler.py:210-211`（逐条回复）。
-- **6e. 回复 + 1:1 出队:** `src/handler.py:206-215` — `ResultMessage` 后逐条 `reply_message()` 回复飞书 → `pool.dequeue_message()` 弹出队头一条 → `metrics.record_message()` 记录。每个 ResultMessage 只 dequeue 一条。
-- **6f. 状态重置:** `src/handler.py:217-222` — 重置 `reply_texts`、`reaction_id`、`current_msg`、`success`、`claude_session_saved`，准备处理下一个 turn。
-- **6g. 异常处理:** `src/handler.py:224-230` — 清理残留 reaction，记录失败 metrics，弹出队头。
+- **6. 持续读取:** `src/handler.py:196-263` — `while True` 循环，`async for msg in client.receive_response()` 流式读取。
+- **6a. FIFO 匹配:** `src/handler.py:211-212` — `pool.peek_pending()` 从队头获取当前处理的飞书 message_id（`current_msg`）。
+- **6b. Claude session 持久化:** `src/handler.py:215-218` — 首次 `AssistantMessage.session_id` 存入 store。
+- **6c. Reaction 生命周期:** `src/handler.py:219-220` — `AssistantMessage` 时 `add_reaction`，`ResultMessage` 时 `remove_reaction`。
+- **6d. 分段发送:** `src/handler.py:202` — `reply_texts: list[str]` 收集每个 `AssistantMessage` turn 的文本。每个 `AssistantMessage` 的 TextBlock 拼成 `turn_text`，非空则 append 进数组。`ResultMessage` 时遍历数组逐条 `reply_message` 回复飞书。见 `src/handler.py:222-227`（收集）、`src/handler.py:242-243`（逐条回复）。
+- **6e. 回复 + 1:1 出队:** `src/handler.py:238-247` — `ResultMessage` 后逐条 `reply_message()` 回复飞书 → `pool.dequeue_message()` 弹出队头一条 → `metrics.record_message()` 记录。每个 ResultMessage 只 dequeue 一条。
+- **6f. 状态重置:** `src/handler.py:249-254` — 重置 `reply_texts`、`reaction_id`、`current_msg`、`success`、`claude_session_saved`，准备处理下一个 turn。
+- **6g. 异常处理:** `src/handler.py:256-262` — 清理残留 reaction，记录失败 metrics，弹出队头。
 
 ### 3.3 FIFO 消息队列机制（1:1 Dequeue 策略）
 

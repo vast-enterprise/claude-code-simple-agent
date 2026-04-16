@@ -9,7 +9,7 @@
 
 - `src/lark.py` (`add_reaction`, `remove_reaction`, `reply_message`, `_reply_plain_text`, `_convert_md_tables`, `_md_table_to_text`, `_MD_TABLE_PATTERN`, `resolve_user_name`, `resolve_chat_name`, `resolve_rich_content`, `download_message_image`, `_get_message_image_key`, `_resolve_inline_images`, `_fetch_merge_forward_content`, `_extract_post_text`, `_extract_message_text`): 飞书 API 交互 + 富消息解析 + 图片下载的唯一出口。API 交互全部为同步阻塞调用。消息回复使用 markdown 富文本格式（`lark-cli im +messages-reply --markdown`），发送前自动将 markdown 表格转为代码块包裹的纯文本对齐格式（飞书 md tag 不支持表格语法），失败时自动降级为纯文本（`_reply_plain_text`）。富消息解析模块将 merge_forward/image/file/audio/video/sticker/media 等非纯文本消息转换为可读文本，图片类消息会自动下载到本地并返回文件路径引用。
 - `src/main.py` (`start_event_listener`): 启动 `lark-cli event +subscribe` 长驻子进程，以 NDJSON 格式输出事件流。
-- `src/handler.py` (`send_message`, `session_reader`, `_ensure_display_names`): 消费端，在消息处理流程中调用 `lark.py` 的函数完成富消息解析、表情反馈、消息回复和名字解析。`send_message` 在构建 prompt 之前调用 `resolve_rich_content()` 预处理非纯文本消息。
+- `src/handler.py` (`send_message`, `session_reader`, `_ensure_display_names`, `_build_prompt`): 消费端，在消息处理流程中调用 `lark.py` 的函数完成富消息解析、表情反馈、消息回复和名字解析。`send_message` 在构建 prompt 之前调用 `resolve_rich_content()` 预处理非纯文本消息。`_build_prompt` 使用 store 中的 `sender_name` / `chat_name` 构造带上下文的 prompt。
 
 ## 3. Execution Flow (LLM Retrieval Map)
 
@@ -30,12 +30,12 @@
 - **入口**: `src/lark.py:378-398` (`reply_message`)
 - **命令**: `lark-cli im +messages-reply --message-id {id} --markdown {text} --as bot`
 - **消息格式**: Markdown 富文本。Claude 输出的粗体、代码块、列表、链接等在飞书中渲染为富文本。
-- **截断策略**: 文本超 15000 字符时，截断至 14950 字符并追加 `"\n\n...(回复过长，已截断)"`。见 `src/lark.py:380-381`。15000 是安全网，实际场景因分段发送每条消息很少超长。
+- **截断策略**: 文本超 15000 字符时，截断至 14950 字符并追加 `"\n\n...(回复过长，已截断)"`。见 `src/lark.py:380-381`。
 - **Markdown 表格预处理**: 飞书 post 消息的 md tag 不支持 markdown 表格语法（`| a | b |` 格式会被丢弃）。`reply_message()` 在发送前调用 `_convert_md_tables(text)` 将所有 markdown 表格转为代码块包裹的纯文本对齐格式。见 `src/lark.py:384`。
   - **正则匹配**: `_MD_TABLE_PATTERN`（`src/lark.py:324-330`）匹配完整的 markdown 表格结构（表头行 + 分隔行 + 数据行）。
   - **转换逻辑**: `_md_table_to_text()`（`src/lark.py:333-370`）去掉外侧 `|`，按列对齐（中文字符算 2 宽度），用 ``` 代码块包裹确保飞书原样展示。
   - **入口函数**: `_convert_md_tables()`（`src/lark.py:373-375`）用正则替换文本中所有匹配的表格。
-- **降级机制**: Markdown 回复失败时自动调用 `_reply_plain_text()` 降级为纯文本回复（`POST /open-apis/im/v1/messages/{id}/reply`，`msg_type: "text"`）。见 `src/lark.py:395-398`、`src/lark.py:401-413`。
+- **降级机制**: Markdown 回复失败时自动调用 `_reply_plain_text()` 降级为纯文本回复（`POST /open-apis/im/v1/messages/{id}/reply`，`msg_type: "text"`）。见 `src/lark.py:395-398`、`src/lark.py:401-414`。
 
 ### 3.3 表情反馈机制
 
@@ -63,8 +63,8 @@
 
 将非纯文本飞书消息（merge_forward、image、file、audio、video、sticker、media）转换为 Claude 可理解的文本描述。图片类消息会自动下载到本地，返回文件路径引用供 Claude 直接读取。
 
-- **入口:** `src/lark.py:275-321` (`resolve_rich_content`) — 检测 `event.message_type`，纯文本/post/interactive 返回 `None`（不需要额外解析），其他类型返回可读文本。末尾有兜底检查：任何消息内容中匹配到 `[Image: img_xxx]` 模式时调用 `_resolve_inline_images` 下载替换（覆盖 compact 格式 post 消息等场景）。见 `src/lark.py:313-318`。
-- **调用时机:** `src/handler.py:92-95` — `send_message` 在构建 prompt 之前调用，若返回非 None 则替换原始 content。
+- **入口:** `src/lark.py:275-321` (`resolve_rich_content`) — 检测 `event.message_type`，纯文本/post/interactive 返回 `None`（不需要额外解析），其他类型返回可读文本。末尾有兜底检查：任何消息内容中匹配到 `[Image: img_xxx]` 模式时调用 `_resolve_inline_images` 下载替换（覆盖 compact 格式 post 消息中图片+文字混排场景）。见 `src/lark.py:313-318`。
+- **调用时机:** `src/handler.py:126-128` — `send_message` 在构建 prompt 之前调用，若返回非 None 则替换原始 content。
 - **合并转发 (merge_forward):** `src/lark.py:281-289` — 通过 `message_type == "merge_forward"` 或内容标记（`_MERGE_FORWARD_MARKERS`）检测。调用 `_fetch_merge_forward_content()` 获取展开内容。
 - **合并转发展开:** `src/lark.py:237-272` (`_fetch_merge_forward_content`) — 执行 `lark-cli im +messages-mget --message-ids {id} --as bot --format json`，lark-cli 内置 merge_forward 展开，返回可读文本。展开后调用 `_resolve_inline_images()` 下载文本中的内联图片。
 - **单张图片消息:** `src/lark.py:292-301` — 调用 `_get_message_image_key()` 获取 image_key，再调用 `download_message_image()` 下载，返回 `[图片消息，已下载到: /full/path.png]`。
@@ -88,7 +88,7 @@
 
 - **用户名解析:** `src/lark.py:43-55` — `resolve_user_name(open_id)` 调用 `lark-cli contact +get-user --user-id {open_id} --user-id-type open_id -q .data.user.name`，返回用户名或 None。
 - **群名解析:** `src/lark.py:58-70` — `resolve_chat_name(chat_id)` 调用 `lark-cli im chats get --params {"chat_id": chat_id} -q .data.name`，返回群名或 None。
-- **触发时机:** `src/handler.py:49-72` — `_ensure_display_names()` 检查 store 中是否已有 `sender_name`，没有则解析并存入。仅首次触发，后续复用 store 数据。
+- **触发时机:** `src/handler.py:53-76` — `_ensure_display_names()` 检查 store 中是否已有 `sender_name`，没有则解析并存入。仅首次触发，后续复用 store 数据。解析结果被 `_build_prompt()` 用于构造消息前缀（见 `src/handler.py:79-109`）。
 
 ## 4. Design Rationale
 

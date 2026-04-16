@@ -76,6 +76,39 @@ def _ensure_display_names(pool: ClientPool, event: dict, session_id: str) -> Non
         pool._store.save(session_id, meta)
 
 
+def _build_prompt(pool: ClientPool, event: dict, session_id: str, content: str) -> str:
+    """构造带发送者上下文的 prompt，包含名字和 ID 供后续 API 交互使用。
+
+    格式示例：
+      [所有者·郭凯南 (ou_xxx)] 在私聊中说：你好
+      [同事·张三 (ou_yyy)] 在「CMS 需求跟进群」(oc_zzz) 中说：帮我查一下
+    """
+    sender_id = event.get("sender_id", "")
+    chat_type = event.get("chat_type", "p2p")
+    chat_id = event.get("chat_id", "")
+
+    # 角色 + 名字
+    role = "所有者" if sender_id == OWNER_ID else "同事"
+    sender_name = ""
+    chat_name = ""
+    if pool._store:
+        meta = pool._store.load_all().get(session_id, {})
+        sender_name = meta.get("sender_name", "")
+        chat_name = meta.get("chat_name", "")
+
+    sender_part = f"{role}·{sender_name}" if sender_name else role
+    sender_tag = f"[{sender_part} ({sender_id})]" if sender_id else f"[{sender_part}]"
+
+    # 场景
+    if chat_type == "group":
+        chat_label = f"「{chat_name}」({chat_id})" if chat_name else f"群聊({chat_id})"
+        scene = f"在{chat_label}中说"
+    else:
+        scene = "在私聊中说"
+
+    return f"{sender_tag} {scene}：{content}"
+
+
 async def send_message(
     pool: ClientPool, event: dict, *, metrics: MetricsCollector | None = None
 ):
@@ -123,16 +156,15 @@ async def send_message(
 
     permissions.set_sender(sender_id)
 
+    # 首次遇到新 session 时解析并存储 sender_name / chat_name（需要在构造 prompt 之前）
+    _ensure_display_names(pool, event, session_id)
+
     # / 开头的消息直接发给 Claude Code（内置 slash command 如 /compact /context /model）
-    # 普通消息加上发送者上下文
+    # 普通消息加上发送者上下文（含 ID，供后续 API 交互使用）
     if content.startswith("/"):
         prompt = content
     else:
-        sender_label = "所有者" if sender_id == OWNER_ID else "同事"
-        prompt = f"[{sender_label}] 在{'群聊' if chat_type == 'group' else '私聊'}中说：{content}"
-
-    # 首次遇到新 session 时解析并存储 sender_name / chat_name
-    _ensure_display_names(pool, event, session_id)
+        prompt = _build_prompt(pool, event, session_id, content)
 
     try:
         client = await pool.get(session_id)

@@ -1,14 +1,13 @@
 ---
 name: tripo-tables
 description: |
-  飞书多维表格全操作：状态流转、字段查询、记录读写、用户需求查询、发车流程、通知模板。
+  飞书多维表格全操作：状态流转、字段查询、记录读写、用户需求查询、发车流程。
   被 tripo-requirement 等流程 skill 显式调用，也可独立使用。
 
   触发条件：
   - 查表格、查字段、查需求、录入需求、更新状态、发车、上线
   - 查询某人的需求、我的需求、需求列表、需求进度
   - 需要 Table ID、Field ID、状态选项值、option_id、Workflow ID
-  - 需要发送飞书通知
 ---
 
 # Tripo 飞书多维表格
@@ -116,6 +115,3 @@ python3 <skill-path>/scripts/query_user_requirements.py <用户名|open_id|我>
 
 关键点：返回的是 `data.data[]`（二维数组）+ `data.fields[]` + `data.record_id_list[]`，**不是** `data.items[]`。
 
-## 通知模板
-
-飞书通知已迁移至独立 skill：→ `tripo-notify`

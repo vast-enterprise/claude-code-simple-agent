@@ -74,8 +74,8 @@ def run_async(coro):
 
 | 模块 | 用例数 | 覆盖情况 |
 |------|--------|----------|
-| `lark.py` | 36 | `reply_message`(4: markdown格式/截断/降级fallback/失败日志) `_extract_post_text`(5: 基本/代码块/图片媒体/空/多语言) `_extract_message_text`(7: text/image/file/audio/interactive/未知/空) `resolve_rich_content`(9: 纯文本/merge_forward/图片/音频/文件/兜底内联图片) `_resolve_inline_images`(4: 单图/多图/失败/无图) `download_message_image`(3: 成功/失败/缓存) `add_reaction`(2) `remove_reaction`(1) |
-| `handler.py` | 12 | `should_respond`(7) `compute_session_id`(5) `handle_message`(7，含并发 session 测试) |
+| `lark.py` | 41 | `_convert_md_tables`(5: 基本表格/保留周围文本/无表格不变/多表格/中文对齐) `reply_message`(4: markdown格式/截断/降级fallback/失败日志) `_extract_post_text`(5: 基本/代码块/图片媒体/空/多语言) `_extract_message_text`(7: text/image/file/audio/interactive/未知/空) `resolve_rich_content`(9: 纯文本/merge_forward/图片/音频/文件/兜底内联图片) `_resolve_inline_images`(4: 单图/多图/失败/无图) `download_message_image`(3: 成功/失败/缓存) `add_reaction`(2) `remove_reaction`(1) |
+| `handler.py` | 33 | `should_respond`(7) `compute_session_id`(5) `_build_prompt`(4: 所有者+私聊+名字/同事+群聊+群名+ID/无store降级/群聊无群名) `send_message`(11: query+入队/路由session/恢复session_id/slash透传/普通前缀/清@mention/空跳过/clear/interrupt/interrupt无client/群聊路由) `session_reader`(6: 完整流程+reaction/错误回复/保存session_id/1:1出队/metrics/无client退出) |
 | `permissions.py` | 5+4 parametrize | `permission_gate` 全部 4 个逻辑分支 |
 | `pool.py` | 5 | `get` 创建+连接(1) 复用(1) 不同 session 独立(1) `shutdown`(1) 并发去重(1) |
 | `server.py` (test_conversation.py) | 14 | `_parse_session_log`(10: 空文件/不存在/用户消息/assistant+tool_use/model字段/model缺失/tool_result字符串/列表/截断/未知类型/畸形JSON/纯thinking跳过) `_get_claude_log_dir`(1) conversation API(3: 无session/有日志/日志不存在) |
@@ -86,4 +86,4 @@ def run_async(coro):
 - **`main.py`** — 无测试（入口脚本、事件循环、子进程生命周期管理）
 - **`lark.py`** — `resolve_user_name`/`resolve_chat_name` 未覆盖
 - **`pool.py`** — `connect()` 失败后的 `disconnect()` + re-raise 路径未覆盖；`--resume` 路径未覆盖
-- **`handler.py`** — `_ensure_display_names`、`/clear` 自行处理、slash command 透传逻辑、分段发送逻辑未覆盖
+- **`handler.py`** — `_ensure_display_names` 未覆盖；分段发送（多个 AssistantMessage → 逐条回复）逻辑未覆盖

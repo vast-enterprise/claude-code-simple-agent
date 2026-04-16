@@ -19,14 +19,17 @@ description: |
 |------|---------|---------|--------|------|
 | tripo-cms | `/Users/macbookair/Desktop/projects/tripo-cms` | `https://github.com/vast-enterprise/tripo-cms.git` | Payload CMS 3.x + Next.js 15 + MongoDB | Headless CMS 内容管理后台 |
 | fe-tripo-homepage | `/Users/macbookair/Desktop/projects/fe-tripo-homepage` | `https://github.com/vast-enterprise/fe-tripo-homepage.git` | Nuxt 4 + Vue 3 + Three.js | Tripo 官网前端 |
+| fe-tripo-studio | `/Users/macbookair/Desktop/projects/fe-tripo-studio` | `https://github.com/vast-enterprise/fe-tripo-studio.git` | Nuxt 4 + Vue 3 + Three.js + @tripo3d/engine | Tripo Studio 3D 模型生成与编辑平台 |
 | fe-tripo-tools | `/Users/macbookair/Desktop/projects/fe-tripo-tools` | `https://github.com/vast-enterprise/fe-tripo-tools.git` | pnpm monorepo + TypeScript | 通用工具库（auth/design/doc/engine/utils） |
 
 ## 仓库关系
 
 ```
-fe-tripo-homepage (前端) ──API调用──▶ tripo-cms (CMS后台) ──▶ MongoDB
+fe-tripo-homepage (官网) ──API调用──▶ tripo-cms (CMS后台) ──▶ MongoDB
        │
        └──依赖工具包──▶ fe-tripo-tools (auth/design/doc/engine/utils)
+                              ▲
+fe-tripo-studio (Studio) ─────┘ 依赖 auth/design/engine/utils
 ```
 
 ## tripo-cms
@@ -71,6 +74,42 @@ fe-tripo-homepage (前端) ──API调用──▶ tripo-cms (CMS后台) ──
 
 - `workflow_dispatch` 手动触发，kubeconfig 区分集群
 - CDN：`https://cdn-web.tripo3d.ai`，刷新通过 `cdn-refresh.yml`
+- PR 自动代码审查：`ai_code_review.yml`（Claude Code Action → 飞书通知）
+
+## fe-tripo-studio
+
+- Web 3D 模型生成与编辑平台（图/文生模型、纹理、绑骨、分割、重拓扑、导出）
+- 依赖 `@tripo3d/auth`、`@tripo3d/design`、`@tripo3d/engine`、`@tripo3d/utils`
+- llmdoc 入口：`llmdoc/index.md`
+
+### Dev 启动注意事项
+
+- devServer 默认 HTTPS + `host: local.tripo3d.ai` + 端口 8000（同 homepage 的坑）
+- 本地联调需加 `--host localhost --no-https`
+- 完整启动命令：`pnpm dev --host localhost --port 8000 --no-https`
+- 依赖安装：`pnpm install`（需 Node.js >= 22.0.0）
+- 环境变量：`.env.development`（开发）、`.env.staging`、`.env.production`
+
+### 国际版（.tripo3d.ai）
+
+| 环境 | 域名 | GitHub Action | K8s Deployment | 分支 |
+|------|------|---------------|----------------|------|
+| staging | `https://web-testing.tripo3d.ai` | `staging.yml` | `studio -n tripo`（阿里云） | main |
+| production | `https://studio.tripo3d.ai` | `production.yml` | AWS: `studio-frontend -n production` + 阿里云: `studio -n tripo` | main |
+
+- production 双集群部署（AWS ECR + 阿里云 ACR），matrix 策略并行构建推送
+- `workflow_dispatch` 手动触发
+- Makefile 快捷构建：`make staging` / `make production`
+
+### 中国版（.tripo3d.com）— 独立维护
+
+> CN 版与国际版有明显差异，可视为独立产品线。CN production 使用独立分支 `main_cn`。
+
+| 环境 | 域名 | GitHub Action | K8s Deployment | 分支 |
+|------|------|---------------|----------------|------|
+| CN staging | `https://studio-test.tripo3d.com` | `cn_staging.yml` | CN 集群 | main |
+| CN production | `https://studio.tripo3d.com` | `cn_production.yml` | CN 集群 | main_cn |
+
 - PR 自动代码审查：`ai_code_review.yml`（Claude Code Action → 飞书通知）
 
 ## fe-tripo-tools
