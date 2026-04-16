@@ -117,7 +117,7 @@ lark-cli docs +update \
 wiki 同步产出的 `node_token` 是下游通知的输入：
 
 ```
-wiki 同步（产出 node_token）→ 记入 STATUS.md → 通知模板引用（notification.md 占位符 <Wiki 文档链接>）
+wiki 同步（产出 node_token）→ 记入 STATUS.md → 通知模板引用（tripo-notify 占位符 <Wiki 文档链接>）
 ```
 
 确保 node_token 在同步完成后立即记入 STATUS.md，通知发送时从 STATUS.md 读取并拼接为完整 URL。

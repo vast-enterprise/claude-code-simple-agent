@@ -81,7 +81,7 @@ lark-cli base +record-update \
 
 ### 6. 通知
 
-通知相关人员前端已部署完毕（→ tripo-tables，notification.md）：
+通知相关人员前端已部署完毕（→ tripo-notify）：
 
 ```bash
 lark-cli im +messages-send --as bot \

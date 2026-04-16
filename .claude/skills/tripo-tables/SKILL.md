@@ -118,4 +118,4 @@ python3 <skill-path>/scripts/query_user_requirements.py <用户名|open_id|我>
 
 ## 通知模板
 
-飞书私聊通知模板（需求评审、技评、闭环、上线等节点）：[references/notification.md](references/notification.md)
+飞书通知已迁移至独立 skill：→ `tripo-notify`
