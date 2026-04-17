@@ -45,16 +45,10 @@ def resolve_table(name_or_id: str) -> tuple:
 
 
 def fetch_all(base_token: str, table_id: str) -> list:
-    """
-    分页获取全量记录。
+    """分页获取全量记录，返回 [{"record_id": str, "fields": {..}}, ...]。
 
-    返回: [{"record_id": str, "fields": {字段名: 值, ...}}, ...]
-
-    lark-cli record-list 返回结构:
-      data.data[]          — 二维数组，每行是一条记录的字段值
-      data.fields[]        — 字段名列表，与 data 列一一对应
-      data.record_id_list[] — record ID 列表，与 data 行一一对应
-      data.has_more        — 是否有下一页
+    record-list 返回结构细节（data.data 二维数组、has_more 翻页、WARN 干扰 stdout 等）
+    参见 lark-base skill。
     """
     all_records = []
     offset = 0

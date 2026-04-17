@@ -1,0 +1,17 @@
+[
+  {
+    "id": 1,
+    "prompt": "我要查产品需求池里所有包含 blog 关键词的需求，怎么做？",
+    "expected": "应指向 search_records.py 脚本（业务封装），不重复教 record-list 返回结构/分页解析（属于 lark-base）"
+  },
+  {
+    "id": 2,
+    "prompt": "我需要手写一个查询，列出执行中需求表里所有『研发中』状态的记录，返回结构怎么解析？",
+    "expected": "应指向 lark-base skill 处理 record-list 返回结构解析；本 skill 仅提供 Table ID / 字段名 / 状态 option_id"
+  },
+  {
+    "id": 3,
+    "prompt": "需求要发车了，怎么把它从执行中需求推到发车中需求？",
+    "expected": "应给出 Workflow ID / option_id / 状态流转语义；触发 Workflow 的 lark-cli 命令细节委托给 lark-base"
+  }
+]

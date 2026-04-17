@@ -44,51 +44,43 @@ CMS 相关文档（根节点）
 
 ## 同步流程
 
-### 步骤 1：检查/创建需求子目录节点
+所有飞书 API 调用 → 委托 **lark-wiki** / **lark-doc** skill。本 skill 仅负责给出业务参数。
 
-首次为该需求同步时，在根节点下创建子目录：
+### 步骤 1：检查/创建需求子目录节点（→ lark-wiki）
 
-```bash
-lark-cli wiki nodes create \
-  --params '{"space_id": "7578727610281118948"}' \
-  --data '{
-    "node_type": "origin",
-    "obj_type": "docx",
-    "parent_node_token": "DkKUwmCnXicsnjkmyrocVFpanrf",
-    "title": "{类型}-{ID} {需求简述}"
-  }'
-```
+首次为该需求同步时，在根节点下创建子目录节点。
+
+| 业务参数 | 值 |
+|---|---|
+| space_id | `7578727610281118948` |
+| parent_node_token | `DkKUwmCnXicsnjkmyrocVFpanrf` |
+| obj_type | `docx` |
+| title | `{类型}-{ID} {需求简述}` |
 
 返回的 `node_token` 记入 STATUS.md 的关联资源区，后续文档挂在此节点下。
 
-### 步骤 2：创建文档节点
+### 步骤 2：创建文档节点（→ lark-wiki）
 
-在需求子目录下创建文档节点：
+在需求子目录下创建文档节点。
 
-```bash
-lark-cli wiki nodes create \
-  --params '{"space_id": "7578727610281118948"}' \
-  --data '{
-    "node_type": "origin",
-    "obj_type": "docx",
-    "parent_node_token": "<需求子目录的 node_token>",
-    "title": "{文档标题}"
-  }'
-```
+| 业务参数 | 值 |
+|---|---|
+| space_id | `7578727610281118948` |
+| parent_node_token | 步骤 1 返回的 `node_token` |
+| obj_type | `docx` |
+| title | 见上方「同步时机」表格映射 |
 
-文档标题映射见上方「同步时机」表格。
+### 步骤 3：写入内容（→ lark-doc）
 
-### 步骤 3：写入内容
+将任务目录下的 markdown 文件内容写入对应 wiki 文档。
 
-将 markdown 内容写入 wiki 文档（注意 `@file` 必须用相对路径，先 cd 到任务目录）：
+| 业务参数 | 值 |
+|---|---|
+| doc（obj_token） | 步骤 2 返回 |
+| mode | `overwrite` |
+| markdown 源 | 任务目录下的 md 文件（如 `review.md`） |
 
-```bash
-cd tasks/{任务目录}/ && \
-lark-cli docs +update \
-  --doc <obj_token> \
-  --mode overwrite \
-  --markdown @./review.md
-```
+注意：markdown 文件路径若用 `@file` 传入，必须用相对路径，需先 `cd` 到任务目录。
 
 ## STATUS.md 关联资源更新
 

@@ -1,0 +1,12 @@
+[
+  {
+    "id": 1,
+    "prompt": "review.md 刚写完，要同步到飞书知识库，完整流程是什么？",
+    "expected": "应给出：Wiki 根节点配置 + 子目录节点语义 + 文件→Wiki 标题映射 + STATUS.md 关联资源回写；节点创建委托 lark-wiki、内容写入委托 lark-doc，不枚举 JSON 参数"
+  },
+  {
+    "id": 2,
+    "prompt": "这个需求的 technical-solution.md 要不要同步 wiki？同步的话标题叫啥？",
+    "expected": "应直接从映射表读出：必须同步，标题『技术方案』；不纠缠具体命令"
+  }
+]

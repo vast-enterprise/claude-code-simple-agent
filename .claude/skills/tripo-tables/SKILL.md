@@ -109,9 +109,7 @@ python3 <skill-path>/scripts/query_user_requirements.py <用户名|open_id|我>
 - `我` 自动调用 `lark-cli contact +get-me` 获取当前用户
 - 字段映射参考：[references/field-mapping.md](references/field-mapping.md)
 
-### 手写 lark-cli 查询前必读
+### 手写 lark-cli 查询
 
-`record-list` 返回结构与直觉不同，手写解析极易出错。详见：[references/lark-cli-gotchas.md](references/lark-cli-gotchas.md)
-
-关键点：返回的是 `data.data[]`（二维数组）+ `data.fields[]` + `data.record_id_list[]`，**不是** `data.items[]`。
+`record-list/record-get` 返回结构解析、分页、中文字段名、WARN 干扰 stdout 等通用坑 → 查 **lark-base skill**。本 skill 只管业务侧的 Table ID / 字段语义 / 状态 option_id / Workflow ID。
 
