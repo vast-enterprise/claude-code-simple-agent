@@ -1,0 +1,12 @@
+[
+  {
+    "id": 1,
+    "prompt": "requirement 流程里 review.md 刚写完，现在要发 R1 通知给所有者，怎么做？",
+    "expected": "应给出通知对象/渠道判断/消息模板，命令拼装委托给 lark-im skill，不枚举 --as bot 参数细节"
+  },
+  {
+    "id": 2,
+    "prompt": "群里有人报了一个 bug，bug-investigation.md 写完了，现在要发 B1 通知，渠道怎么定？",
+    "expected": "应明确群聊回复原消息反@报告人 + 额外私聊所有者；消息发送动作指向 lark-im"
+  }
+]
