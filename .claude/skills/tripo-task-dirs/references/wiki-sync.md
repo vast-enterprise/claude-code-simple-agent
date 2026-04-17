@@ -102,7 +102,7 @@ CMS 相关文档（根节点）
 - Wiki URL 格式：`https://vastai3d.feishu.cn/wiki/<node_token>`
 - 适用范围：不限于 tripo-requirement 的 4 个通知节点，任何飞书消息引用 wiki 文档时都必须附带链接
 - 多个文档时逐行列出所有链接
-- `node_token` 从 `lark-cli wiki nodes create` 返回值或 STATUS.md 关联资源区获取
+- `node_token` 从步骤 1 创建子目录节点时的返回值（→ lark-wiki skill）或 STATUS.md 关联资源区获取
 
 ## 下游消费契约
 
