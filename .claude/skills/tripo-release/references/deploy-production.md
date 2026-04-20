@@ -69,7 +69,7 @@ curl -sL -o /dev/null -w "%{http_code}" <production-url>
 
 ### 5. 勾前端部署 checkbox
 
-更新 Sprint 版本计划的前端部署完毕字段（→ tripo-tables，checkbox 字段 ID 见 release-flow.md）：
+更新 Sprint 版本计划的前端部署完毕字段（→ tripo-tables，checkbox 字段 ID 见 release-flow.md 数据字典）：
 
 ```bash
 lark-cli base +record-update \

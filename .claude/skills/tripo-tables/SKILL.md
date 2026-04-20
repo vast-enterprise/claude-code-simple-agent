@@ -1,13 +1,14 @@
 ---
 name: tripo-tables
 description: |
-  飞书多维表格全操作：状态流转、字段查询、记录读写、用户需求查询、发车流程。
-  被 tripo-requirement 等流程 skill 显式调用，也可独立使用。
+  飞书多维表格全操作：表结构/字段/记录/用户需求查询、状态流转数据字典。
+  被 tripo-requirement、tripo-release 等流程 skill 显式调用，也可独立使用。
 
   触发条件：
-  - 查表格、查字段、查需求、录入需求、更新状态、发车、上线
+  - 查表格、查字段、查需求、录入需求、更新状态
   - 查询某人的需求、我的需求、需求列表、需求进度
   - 需要 Table ID、Field ID、状态选项值、option_id、Workflow ID
+  - **不触发**："发车"、"上线"、"上车"（属 tripo-release 编排，本 skill 只被其调用获取字典数据）
 ---
 
 # Tripo 飞书多维表格
@@ -72,9 +73,11 @@ Sprint版本计划.部署进度（接力式）:
   □算法 → ✓算法 □后端 → ✓算法 ✓后端 □前端 → ✓全部完毕
 ```
 
-## 发车流程与 Workflow
+## 发车相关数据字典
 
-发车上线三条路径和完整 Workflow/option_id 速查：[references/release-flow.md](references/release-flow.md)
+发车涉及表格的 option_id / Workflow ID / checkbox 字段 ID / lark-cli 业务参数：[references/release-flow.md](references/release-flow.md)
+
+> 发车**业务流程**（三条路径语义、接力部署、前端视角关键节点）见 `tripo-release/references/dispatch-board.md`。本 skill 只管数据字典。
 
 ## 记录查询
 

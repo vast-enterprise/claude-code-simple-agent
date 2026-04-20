@@ -1,88 +1,7 @@
-# 发车流程全景
+# 发车相关数据字典
 
-> 基于飞书多维表格 Tripo 需求一览表 + 技术需求一览表。
-
-## 需求来源 → 执行中需求
-
-```
-产品需求池 ──[需求准入确认]──→ 执行中需求
-技术需求管理 ──[需求准入确认]──→ 执行中需求
-```
-
-两个需求池都通过「需求准入确认」按钮将需求推入执行中需求表。
-
-## 需求上线三条路径
-
-### 路径 1：发车准入（搭公交）
-
-- **workflow**: `wkfCTuzpHvY4FghE`（需求准出确认）
-- **触发**: 执行中需求表 → 点击「发车准入」按钮
-- **动作**: 搭上已有班车（查找班车状态=已启动、上线类型=跟车的版本）
-- **结果**:
-  - 发车中需求新增记录，状态=待上线（排队等统一发车）
-  - 执行中需求状态 → 完成
-  - 产品需求池状态 → 验收/提测中，关联版本
-- **后续**: 等版本 Owner 点「启动发车」统一推进
-
-### 路径 2：临时发车（打专车，SSS 紧急）
-
-- **workflow**: `wkfufcEDGQeXQfTF`（临时发车确认）
-- **触发**: 执行中需求表 → 点击「临时发车确认」按钮
-- **动作**: 创建新版本（上线类型=sss），跳过排队
-- **结果**:
-  - Sprint 版本计划新增记录（上线类型=sss，班车状态=已启动）
-  - 发车中需求新增记录，状态=上线中（直接进入部署）
-  - 执行中需求状态 → 完成
-  - 产品需求池状态 → 验收/提测中
-- **后续**: 直接进入部署流程
-
-### 路径 3：Hotfix（Bug 修复快车）
-
-- **workflow**: `wkf1daTXkGSUjGLY`（创建发车hotfix）
-- **触发**: 执行中需求表 → 点击「创建发车hotfix」按钮
-- **动作**: 创建新版本（上线类型=hotfix）
-- **适用**: Bug 修复
-
-## 发车后的部署流程
-
-### 启动发车
-
-- **workflow**: `wkf9ICnGBZyU2G0R`
-- **触发**: Sprint 版本计划 → 点击「启动发车」按钮
-- **动作**: 该版本下所有"待上线"需求 → "上线中"，通知跟进群
-
-### 接力式部署（自动监控）
-
-- **workflow**: `wkfiXUddmigXTMvK`（发车流程监控）
-- **触发**: SetRecordTrigger，监控 Sprint 版本计划的 3 个 checkbox
-- **流程**:
-
-```
-算法部署完毕 ✓ → 通知群，附"后端部署完毕"按钮
-  → 后端部署完毕 ✓ → 通知群，附"前端部署完毕"按钮
-    → 前端部署完毕 ✓ → 通知群，附"提交 hotfix"按钮
-```
-
-### 发版完成确认
-
-- **workflow**: `wkfv7lNEMo3XlRlR`
-- **触发**: Sprint 版本计划 → 点击「发车完毕」按钮
-- **动作**:
-  - 发车中需求：上线中 → 完成
-  - Hotfix管理：关联记录 → 完成
-  - 产品需求池：→ 已完成
-  - Sprint 版本计划：班车状态 → 已完成
-
-## 前端开发视角的关键节点
-
-1. **开发完成**: 执行中需求.`前端开发` → 完成
-2. **自测闭环**: 开发者自测，不等同正式功能测试
-3. **上线**:
-   - 判断路径（跟车 / SSS / hotfix）
-   - 执行需求准出（写入发车中需求）
-   - 触发前端 GitHub Actions 部署
-   - 勾选 Sprint 版本计划的「前端部署完毕」checkbox
-   - 飞书通知
+> **定位**:发车流程涉及表格的 option_id、workflow_id、字段 ID、lark-cli 业务参数速查。
+> 业务流程(三条路径语义、接力部署、前端视角关键节点)见 `tripo-release/references/dispatch-board.md`。
 
 ## option_id 速查
 
@@ -109,18 +28,18 @@
 
 | workflow_id | 名称 | 触发方式 | 作用 |
 |---|---|---|---|
-| `wkfEdyvotjKQHMr6` | 每周创建发车版本 | TimerTrigger（每周） | 自动创建本周班车 |
+| `wkfEdyvotjKQHMr6` | 每周创建发车版本 | TimerTrigger(每周) | 自动创建本周班车 |
 | `wkftpEooZBMc2AUa` | 需求准入确认 | ButtonTrigger | 产品需求池 → 执行中需求 |
-| `wkfCTuzpHvY4FghE` | 需求准出确认 | ButtonTrigger | 执行中需求 → 发车中需求（跟车） |
+| `wkfCTuzpHvY4FghE` | 需求准出确认 | ButtonTrigger | 执行中需求 → 发车中需求(跟车) |
 | `wkfufcEDGQeXQfTF` | 临时发车确认 | ButtonTrigger | SSS 紧急通道 |
 | `wkf1daTXkGSUjGLY` | 创建发车hotfix | ButtonTrigger | Hotfix 通道 |
 | `wkf9ICnGBZyU2G0R` | 启动发车 | ButtonTrigger | 待上线 → 上线中 |
 | `wkfiXUddmigXTMvK` | 发车流程监控 | SetRecordTrigger | 监控 3 个 checkbox 接力通知 |
-| `wkfQpKcvFM3J7v10` | 发版信息同步 | ButtonTrigger | 添加群成员，通知发车信息 |
-| `wkfv7lNEMo3XlRlR` | 发版完成确认 | ButtonTrigger | 上线中→完成，需求池→已完成 |
+| `wkfQpKcvFM3J7v10` | 发版信息同步 | ButtonTrigger | 添加群成员,通知发车信息 |
+| `wkfv7lNEMo3XlRlR` | 发版完成确认 | ButtonTrigger | 上线中→完成,需求池→已完成 |
 | `wkfDZswkBew4cDpN` | 每日执行中需求状态同步 | TimerTrigger | 每日同步状态 |
 
-## 部署 checkbox 字段 ID（Sprint 版本计划）
+## 部署 checkbox 字段 ID(Sprint 版本计划)
 
 | 字段 | Field ID |
 |------|----------|
@@ -128,15 +47,16 @@
 | 后端部署完毕 | `fldWGA6C5g` |
 | 前端部署完毕 | `fldy6ym5PN` |
 
-## lark-cli 直接操作（绕过 workflow 按钮）
+## lark-cli 直接操作(绕过 workflow 按钮)
 
-所有记录的增改查 → 调用 **lark-base skill**（`+record-list` / `+record-upsert` / `+record-update`）。本 skill 只提供业务参数：
+所有记录的增改查 → 调用 **lark-base skill**(`+record-list` / `+record-upsert` / `+record-update`)。
+本表只提供业务参数:
 
 | 场景 | 涉及表 | 关键字段 | 写入值来源 |
 |---|---|---|---|
-| 需求准出（跟车） | Sprint 版本计划（查已启动的跟车版本）→ 发车中需求（upsert 状态=待上线，关联发车版本）→ 执行中需求（update 状态=完成）→ 产品需求池（update 需求状态=验收/提测中） | 班车状态 / 上线类型 / 状态 / 需求状态 / 发车版本(link) | 上方「option_id 速查」 |
-| 需求准出（SSS 紧急） | Sprint 版本计划（upsert 新版本，上线类型=sss、班车状态=已启动）→ 发车中需求（upsert 状态=上线中）→ 执行中需求 + 产品需求池（同跟车后半段） | 同上 | 同上 |
-| 勾部署 checkbox | Sprint 版本计划（update checkbox=true） | 算法部署完毕 / 后端部署完毕 / 前端部署完毕 | 上方「部署 checkbox 字段 ID」 |
-| 发版完成确认 | 发车中需求（update 状态=完成）+ 产品需求池（update 需求状态=已完成）+ Sprint 版本计划（update 班车状态=已完成） | 同上 | 同上 |
+| 需求准出(跟车) | Sprint 版本计划(查已启动的跟车版本)→ 发车中需求(upsert 状态=待上线,关联发车版本)→ 执行中需求(update 状态=完成)→ 产品需求池(update 需求状态=验收/提测中) | 班车状态 / 上线类型 / 状态 / 需求状态 / 发车版本(link) | 上方「option_id 速查」 |
+| 需求准出(SSS 紧急) | Sprint 版本计划(upsert 新版本,上线类型=sss、班车状态=已启动)→ 发车中需求(upsert 状态=上线中)→ 执行中需求 + 产品需求池(同跟车后半段) | 同上 | 同上 |
+| 勾部署 checkbox | Sprint 版本计划(update checkbox=true) | 算法部署完毕 / 后端部署完毕 / 前端部署完毕 | 上方「部署 checkbox 字段 ID」 |
+| 发版完成确认 | 发车中需求(update 状态=完成)+ 产品需求池(update 需求状态=已完成)+ Sprint 版本计划(update 班车状态=已完成) | 同上 | 同上 |
 
-Base Token / Table ID / 字段详情见 SKILL.md「数据表速查」。`record-upsert` 的 link 字段写法（`[{"record_id": "..."}]`）、中文字段名的坑、WARN 污染 stdout 等解析/构造细节 → **lark-base skill**。
+Base Token / Table ID / 字段详情见 SKILL.md「数据表速查」。`record-upsert` 的 link 字段写法(`[{"record_id": "..."}]`)、中文字段名的坑、WARN 污染 stdout 等解析/构造细节 → **lark-base skill**。

@@ -5,14 +5,16 @@ description: |
   即使需求涉及特定仓库（如 CMS、前端），也应先走本流程再在步骤内加载对应仓库 skill。
   本 skill 是流程编排层，tripo-cms/tripo-repos 等是执行层——编排先于执行。
 
-  Tripo 需求开发全流程管理：接收→录入→评审→开发→PR→闭环→验收→上线，10 步闭环。
+  Tripo 需求开发全流程管理：接收→录入→评审→开发→PR→闭环→验收→提交发车候选,10 步闭环。
+  **本 skill 终点是「提交发车候选」,不包含真正发车上线**；发车是独立流程（→ tripo-release）,由用户/scrum-master 显式触发。
 
   触发条件（任一命中即触发）：
   - `/tripo-requirement` 或"做需求"、"开发需求"、"帮我实现"、"新需求"
   - 用户提供需求描述、PRD 文档、飞书链接或需求 ID
-  - 需求状态流转：PR 合并、验收通过、部署上线、更新执行表/需求池状态
-  - 关键词："合并了"、"merged"、"自测通过"、"验收"、"上线"、"发版"、"部署"、"发车"、"提测"、"准出"
+  - 需求状态流转：PR 合并、验收通过、更新执行表/需求池状态、提交发车候选
+  - 关键词："合并了"、"merged"、"自测通过"、"验收"、"提测"、"准出"、"发车候选"
   - 评估需求进度、查看需求状态
+  - **不自动触发**：只说"发车"、"上线"、"部署 production"——走 tripo-release,不重启本流程
 
   消歧规则：当"做需求"与其他 skill 触发词同时出现（如"做需求，关于 CMS 的 XX"），
   本 skill 优先级高于 tripo-cms、tripo-repos 等执行层 skill。
@@ -29,10 +31,12 @@ description: |
 ## 流程概览
 
 ```
-1.接收 → 2.录入 → 3.评审 → 4.执行 → 5.技评 → 6.开发 → 7.PR → 8.闭环 → 9.验收 → 10.上线
-   │         │         │         │         │         │        │        │        │
- 创建目录   入需求池   输出文档   执行表    技术方案  worktree  创建PR   自动验证  客户验收  发布
+1.接收 → 2.录入 → 3.评审 → 4.执行 → 5.技评 → 6.开发 → 7.PR → 8.闭环 → 9.验收 → 10.提交发车候选
+   │         │         │         │         │         │        │        │        │         │
+ 创建目录   入需求池   输出文档   执行表    技术方案  worktree  创建PR   自动验证  客户验收  入发车队列
                       🔔通知              🔔通知                       🔔通知    🔔通知
+                                                                                        ↓
+                                                             发车流程独立（→ tripo-release,用户显式触发）
 ```
 
 ## 双表联动
@@ -58,7 +62,7 @@ description: |
 | 7 | 创建 PR | [steps/7-pr.md](references/steps/7-pr.md) |
 | 8 | 自动化闭环 | [steps/8-test.md](references/steps/8-test.md) |
 | 9 | 用户验收 | [steps/9-acceptance.md](references/steps/9-acceptance.md) |
-| 10 | 发布上线 | [steps/10-release.md](references/steps/10-release.md) |
+| 10 | 提交发车候选（**不发车**） | [steps/10-release.md](references/steps/10-release.md) |
 
 ## 状态同步规则
 
@@ -80,7 +84,7 @@ description: |
 | 3 | review.md 输出后 |
 | 5 | technical-solution.md 输出后 |
 | 8 | Review + 测试通过后 |
-| 10 | 用户验收通过后 |
+| 10 | 用户验收通过 → 发车候选入队后 |
 
 ## 异常处理
 
@@ -92,10 +96,10 @@ description: |
 
 ### 流程支撑 skill（资源层）
 - `tripo-notify` skill - 飞书主动通知（通知对象、渠道规则、节点模板）
-- `tripo-tables` skill - 表格结构、字段 ID、状态选项、发车流程
+- `tripo-tables` skill - 表格结构、字段 ID、状态选项、发车相关数据字典
 - `tripo-repos` skill - 代码仓库注册表（路径、技术栈、部署信息）
 - `tripo-task-dirs` skill - 任务目录管理、状态跟踪、归档
-- `tripo-release` skill - 前端发版（staging / production）
+- `tripo-release` skill - **独立的发车上线流程**（13 步编排）,本 skill 只到「提交发车候选」,不调用 release 的发车编排
 
 ### 方法论 skill（步骤内加载）
 - `tripo-dev` skill - 编码方法论（步骤 6 加载）：先理解再编码、运行时验证、完成 Checklist

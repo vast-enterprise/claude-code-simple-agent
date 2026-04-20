@@ -1,14 +1,16 @@
 ---
 name: tripo-bugfix
 description: |
-  Tripo 缺陷修复全流程：接收→录入→调查→修复→PR→闭环→验收→上线，8 步闭环。
+  Tripo 缺陷修复全流程：接收→录入→调查→修复→PR→闭环→验收→提交发车/Hotfix 候选,8 步闭环。
+  **本 skill 终点是「提交发车候选」,不包含真正发车上线**；发车是独立流程（→ tripo-release）,由用户/scrum-master 显式触发。
   用户说"修 bug"/"有 bug"/"出问题了"/"不显示"/"报错"时触发本 skill。
-  本 skill 是缺陷修复的流程编排层，tripo-repos/tripo-tables/tripo-worktree 等是执行层。
+  本 skill 是缺陷修复的流程编排层,tripo-repos/tripo-tables/tripo-worktree 等是执行层。
 
   触发条件（任一命中即触发）：
-  - `/tripo-bugfix` 或"修 bug"、"有 bug"、"出问题了"、"fix"、"hotfix"
+  - `/tripo-bugfix` 或"修 bug"、"有 bug"、"出问题了"、"fix"
   - 用户转发同事的 bug 反馈消息
   - 关键词：bug、缺陷、修复、regression、不显示、报错、crash、样式问题
+  - **不自动触发**：只说"hotfix 上线"/"发车"/"发版"——走 tripo-release,不重启本流程
 
   消歧规则：当 bug 信息中涉及特定仓库（如"CMS 的 XX 有 bug"），
   本 skill 优先级高于 tripo-cms、tripo-repos 等执行层 skill。
@@ -26,11 +28,12 @@ description: |
 ## 流程概览
 
 ```
-1.接收 → 2.录入 → 3.调查 → 4.修复 → 5.PR → 6.闭环 → 7.验收 → 8.上线
+1.接收 → 2.录入 → 3.调查 → 4.修复 → 5.PR → 6.闭环 → 7.验收 → 8.提交发车候选
    │        │        │        │        │       │        │        │
- 理解问题   Bug表    定位根因  worktree  创建PR  CR+测试   review   发车
-                    报告+wiki                   🔔通知    合并
-                    🔔通知
+ 理解问题   Bug表    定位根因  worktree  创建PR  CR+测试   review   入发车/Hotfix 队列
+                    报告+wiki                   🔔通知    合并              │
+                    🔔通知                                                  ↓
+                                                     发车流程独立（→ tripo-release,用户显式触发）
 ```
 
 ## Bug 状态流转
@@ -41,7 +44,7 @@ description: |
 | 调查中 | In progress |
 | 修复完成 | In progress |
 | PR 合并 | Resolved |
-| 上线 | Closed |
+| 上线（发车流程闭环后） | Closed |
 
 ## 步骤详解
 
@@ -54,7 +57,7 @@ description: |
 | 5 | 创建 PR | [steps/5-pr.md](references/steps/5-pr.md) |
 | 6 | 自动化闭环 | [steps/6-test.md](references/steps/6-test.md) |
 | 7 | 用户验收 | [steps/7-acceptance.md](references/steps/7-acceptance.md) |
-| 8 | 发布上线 | [steps/8-release.md](references/steps/8-release.md) |
+| 8 | 提交发车/Hotfix 候选（**不发车**） | [steps/8-release.md](references/steps/8-release.md) |
 
 ## 状态同步规则
 
@@ -95,8 +98,8 @@ Bug: <描述>
 ## 相关 skill
 
 - `tripo-notify` - 飞书主动通知（通知对象、渠道规则、节点模板）
-- `tripo-tables` - Bug 管理表结构、字段 ID、状态选项
+- `tripo-tables` - Bug 管理表结构、字段 ID、状态选项、发车数据字典
 - `tripo-repos` - 代码仓库注册表
 - `tripo-worktree` - worktree 生命周期管理
-- `tripo-release` - 发版上线
+- `tripo-release` - **独立的发车/Hotfix 上线流程**（13 步编排）,本 skill 只到「提交发车候选」,不调用 release 的发车编排
 - `tripo-test` - 验证方法论
