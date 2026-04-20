@@ -63,3 +63,27 @@
 ### 2026-04-03 步骤 7: 创建 PR
 - CMS PR: https://github.com/vast-enterprise/tripo-cms/pull/38
 - 前端 PR: https://github.com/vast-enterprise/fe-tripo-homepage/pull/182
+
+### 2026-04-15~16 步骤 8: 自动化闭环
+- 8.1 Code Review: 两个仓库已审查
+- 8.2 测试计划: integration-test-plan.md 已输出
+- 8.3 集成测试: 3/4 PASS, 1 DEFERRED
+- 8.4 验证报告: integration-test-report.md 已输出
+- 验收阶段额外发现并修复:
+  - CMS pinned-cell/pinned-order-cell 组件 PATCH 导致草稿文章状态异常 → 改用 ?draft=true
+  - 前端置顶标识从 category 混排改为标题左侧 inline badge（品牌黄 #f9cf00 + i18n）
+  - 回退预览模式草稿查询（影响 BlogFeaturedPost relationship 展开）
+- 8.5 飞书通知: 已发送 (om_x100b513331d5c900c389538a04104d6)
+- 等待用户验收
+
+### 2026-04-16 步骤 9: 用户验收
+- CMS PR #38: 已合并
+- 前端 PR #182: 已合并（rebase 解决冲突，修复 i18n 文件丢失 login 等 key）
+- 主工作区已同步: tripo-cms main, fe-tripo-homepage main
+- Staging 部署:
+  - CMS staging: https://cms-staging.itripo3d.com/ (HTTP 200)
+  - 前端 staging: https://web-testing.tripo3d.ai/blog (HTTP 200)
+- 表格状态: 执行表"完成"，需求池"验收/提测中"
+- Wiki 子目录: Jc43wGs0Sif1I2kSFAfcTlYwnQc (https://a9ihi0un9c.feishu.cn/wiki/Jc43wGs0Sif1I2kSFAfcTlYwnQc)
+  - 使用指南: JP4Cws9QhimGzpku2hic33CXnDd (https://a9ihi0un9c.feishu.cn/wiki/JP4Cws9QhimGzpku2hic33CXnDd)
+- 等待 staging 验收通过后进入步骤 10
