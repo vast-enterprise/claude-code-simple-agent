@@ -1,17 +1,44 @@
 [
   {
     "id": 1,
-    "prompt": "我要查产品需求池里所有包含 blog 关键词的需求，怎么做？",
-    "expected": "应指向 search_records.py 脚本（业务封装），不重复教 record-list 返回结构/分页解析（属于 lark-base）"
+    "category": "typical",
+    "prompt": "查一下「博客支持排序」这个需求当前什么状态",
+    "expected": "加载 tripo-tables；用 record-list 在产品需求池按需求名搜；返回可点击链接（域名沿用 skill SKILL.md 顶部）+ 当前状态字段"
   },
   {
     "id": 2,
-    "prompt": "我需要手写一个查询，列出执行中需求表里所有『研发中』状态的记录，返回结构怎么解析？",
-    "expected": "应指向 lark-base skill 处理 record-list 返回结构解析；本 skill 仅提供 Table ID / 字段名 / 状态 option_id"
+    "category": "typical",
+    "prompt": "把执行中需求里「博客排序」的状态改成完成",
+    "expected": "查 fields-execution.md 拿到『状态』字段的 option_id（完成=optePqTXTq）；AskUserQuestion 预确认旧值→新值；--dry-run→正式 record-update→贴可点击链接"
   },
   {
     "id": 3,
-    "prompt": "需求要发车了，怎么把它从执行中需求推到发车中需求？",
-    "expected": "应给出 Workflow ID / option_id / 状态流转语义；触发 Workflow 的 lark-cli 命令细节委托给 lark-base"
+    "category": "typical",
+    "prompt": "勾一下 Sprint v2026.04.10 的前端部署完毕 checkbox",
+    "expected": "查 release-flow.md 的 checkbox 字段 ID（fldy6ym5PN）；record-update 设 true；贴 Sprint 记录链接；**不触发**下游 workflow（仅字段变更）"
+  },
+  {
+    "id": 4,
+    "category": "edge-by-name",
+    "prompt": "我不记得 record_id，用需求名搜「博客排序」",
+    "expected": "优先指 search_records.py 脚本；命中多条时 AskUserQuestion 让用户选，**不默认取第一条**；零命中时不静默返回空，给修改搜索范围/字段的建议"
+  },
+  {
+    "id": 5,
+    "category": "edge-batch",
+    "prompt": "把这 5 个需求的状态都改成测试中",
+    "expected": "列出 5 个 record_id + 目标字段打包 AskUserQuestion 一次性预确认；逐条 record-update；一条失败不静默跳过，贴每条成功/失败结果"
+  },
+  {
+    "id": 6,
+    "category": "edge-missing",
+    "prompt": "这个需求的飞书链接打不开，帮我看下 record 还在不在",
+    "expected": "用 record-get 而非 list 精确定位；区分三种可能：record 已被删除 / 域名或 table_id 变了 / 无权限；不给『大概还在』这种模糊回答"
+  },
+  {
+    "id": 7,
+    "category": "typical-by-user",
+    "prompt": "查一下郭凯南现在手上有哪些在进行的需求",
+    "expected": "指向 query_user_requirements.py 脚本（skill 已封装的强能力）；不现写 record-list + filter；返回三张表的汇总"
   }
 ]

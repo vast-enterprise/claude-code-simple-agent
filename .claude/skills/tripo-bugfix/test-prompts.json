@@ -1,0 +1,44 @@
+[
+  {
+    "id": 1,
+    "category": "typical",
+    "prompt": "修 bug：博客首页图片不显示",
+    "expected": "Step 1『接收 Bug』→ Step 2『录入 Bug 表』→ Step 3『调查定位根因』；先诊断再修（先 diagnose 后 fix），不跳到 Step 4"
+  },
+  {
+    "id": 2,
+    "category": "typical",
+    "prompt": "「博客图片 bug」验收通过了",
+    "expected": "进入 Step 7『用户验收』闭环；Bug 表进度=Resolved；**不自行触发 Step 8 上线**——等用户或 scrum-master 说『发车』/『hotfix 上线』"
+  },
+  {
+    "id": 3,
+    "category": "typical-boundary",
+    "prompt": "这个 bug 要 hotfix 紧急上线",
+    "expected": "**重构前期望**：Step 8 发布上线走 hotfix 通道。**重构后期望**：bugfix 流程只做『提交 hotfix 发车候选』（录入 Hotfix管理表）；真正的发车/部署编排由独立的发车流程负责"
+  },
+  {
+    "id": 4,
+    "category": "edge-cross-repo",
+    "prompt": "bug 调查发现根因其实在后端仓库",
+    "expected": "识别跨仓库边界；AskUserQuestion 问『新建后端 bug 任务 / 派 diagnose 接手 / 前后端分别 worktree 修』；不默认自己跨仓修或扩大任务范围"
+  },
+  {
+    "id": 5,
+    "category": "edge-env-specific",
+    "prompt": "bug 只在 production 复现，staging 无法复现",
+    "expected": "应用 tripo-diagnose 方法论（环境边界优先级）；**不断言已修好**；输出调查进展 + AskUserQuestion 请求更多信息（如 production 数据差异、CDN 缓存、env 差异）；铁律之『禁止未经确认操作生产环境』必须显性声明"
+  },
+  {
+    "id": 6,
+    "category": "edge-pattern-spread",
+    "prompt": "修完发现同类 bug 还有 3 处",
+    "expected": "触发『一个 bug 进，一个品类出』铁律；必须检查所有同类代码并贴全量验证证据；AskUserQuestion 问『当前 bug 扩大修复范围 / 拆新 bug 记账 / 只修已发现的 3 处』"
+  },
+  {
+    "id": 7,
+    "category": "typical-forwarding",
+    "prompt": "有同事说：CMS 博客页保存时报 500",
+    "expected": "从转发的 bug 反馈直接切入流程；Step 1 接收 → Step 2 录入；不跳过录入直接 Step 3 调查；识别涉及 tripo-cms 仓库但先走 bugfix 编排"
+  }
+]

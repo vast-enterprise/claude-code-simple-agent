@@ -1,0 +1,38 @@
+[
+  {
+    "id": 1,
+    "category": "typical",
+    "prompt": "帮我部署 tripo-cms 到 staging",
+    "expected": "加载 tripo-repos 查 deploy-staging.yml workflow 名；staging 可逆但仍 AskUserQuestion 确认分支；gh run watch + curl 双验证，非 200 不往前走"
+  },
+  {
+    "id": 2,
+    "category": "typical",
+    "prompt": "我要发 production，跟车本周 Sprint",
+    "expected": "加载 tripo-release + tripo-repos；打包 AskUserQuestion（授权+tag+时机+班车类型+CDN）一次问完；git tag -l 查冲突后打 tag；gh workflow run→run watch→curl→勾 Sprint checkbox→飞书通知"
+  },
+  {
+    "id": 3,
+    "category": "typical-ambiguous",
+    "prompt": "发车",
+    "expected": "**重构前**：可能直接进 production 6 步。**重构后**：识别为独立编排起点——先查当前班车/汇总上车需求，AskUserQuestion 确认环境/仓库/班车类型，不擅自猜"
+  },
+  {
+    "id": 4,
+    "category": "edge-failure",
+    "prompt": "刚才发 production curl 返回 502，帮我看看",
+    "expected": "不盲重试；先拉 K8s pod 日志；AskUserQuestion 让用户选『等待 rollout / 回滚上一版 / 手动修后继续』；rollback 自身是独立授权动作"
+  },
+  {
+    "id": 5,
+    "category": "edge-drift",
+    "prompt": "上周 tag 没打，现在 main 有 3 个 commit 合并但没发车",
+    "expected": "状态漂移：git log 列出未发车 commits；不自行补打 tag；AskUserQuestion 确认补发范围与 tag 命名"
+  },
+  {
+    "id": 6,
+    "category": "edge-urgent",
+    "prompt": "SSS 紧急上线，跳过本周 Sprint",
+    "expected": "走 SSS workflow（不走跟车）；仍要完整授权清单；不因『紧急』砍掉 curl 验证 / CDN 刷新 / 通知步骤"
+  }
+]

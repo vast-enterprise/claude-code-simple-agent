@@ -1,0 +1,44 @@
+[
+  {
+    "id": 1,
+    "category": "typical",
+    "prompt": "做一个需求：博客支持手动排序",
+    "expected": "从 Step 1『接收需求 & 创建目录』开始扫；Read 1-receive.md；AskUserQuestion 确认录入信息；不跳步到开发"
+  },
+  {
+    "id": 2,
+    "category": "typical",
+    "prompt": "「博客排序」这个需求 PR 合并了",
+    "expected": "进入 Step 8『自动化闭环』→ Step 9『用户验收』；改执行中需求状态=完成、需求池=验收/提测中；**不自行进入 Step 10 发布/发车**，等用户指令"
+  },
+  {
+    "id": 3,
+    "category": "typical-boundary",
+    "prompt": "「博客排序」在 staging 验收通过了，可以上线",
+    "expected": "**重构前期望**：顺势进入 Step 10『发布上线』走 deploy。**重构后期望**：需求本身只做『提交发车候选』+ 更新表状态，不触发发车编排；发车是独立流程等用户说『发车』/scrum-master 查班车"
+  },
+  {
+    "id": 4,
+    "category": "edge-scope-change",
+    "prompt": "需求做一半产品改了定容",
+    "expected": "不继续 Step 6 编码；回 Step 2『归类与录入』或 Step 3『需求评审』调整定容；AskUserQuestion 确认是否暂停当前 worktree 开发"
+  },
+  {
+    "id": 5,
+    "category": "edge-rework",
+    "prompt": "需求 PR CR 不通过被打回",
+    "expected": "回 Step 6『编码开发』，**不进 Step 8**；记录返工原因到任务目录；**不改需求状态为完成**；重新走 CR → 合并 → 闭环"
+  },
+  {
+    "id": 6,
+    "category": "edge-stall",
+    "prompt": "这个需求挂了 2 周没动了",
+    "expected": "识别停滞；AskUserQuestion 问『继续推进 / 降优先级 / 取消』；不默认催促 Owner；不自行改状态"
+  },
+  {
+    "id": 7,
+    "category": "typical-entry",
+    "prompt": "这个需求飞书链接：<url>，帮我看下怎么处理",
+    "expected": "从链接解析 record_id（查 tripo-tables）；按『如何确定起始步骤』扫描前置条件+完成标准；报告当前落在第几步，从该步开始执行——而不是从 Step 1 重启"
+  }
+]
