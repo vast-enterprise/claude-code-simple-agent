@@ -9,3 +9,6 @@ tmp
 .env
 data/
 .claude/skills/auto-optimize-results.tsv
+.venv
+bench/transcripts/
+*.pyc
