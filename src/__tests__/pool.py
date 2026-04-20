@@ -366,3 +366,204 @@ class TestClientPoolWithStore:
             assert pool.session_ids() == set()
 
         run_async(run())
+
+
+class TestPoolEviction:
+    """LRU 回收策略测试"""
+
+    def _make_store(self, sessions: dict):
+        store = MagicMock()
+        store.load_all = MagicMock(return_value=sessions)
+        store.save = MagicMock()
+        store.update_active = MagicMock()
+        store.remove = MagicMock(return_value=True)
+        store.archive = MagicMock(return_value=True)
+        return store
+
+    def _make_dispatcher(self):
+        dispatcher = MagicMock()
+        dispatcher.cancel_reader = MagicMock()
+        return dispatcher
+
+    @patch("src.pool.ClaudeSDKClient")
+    def test_evicts_lru_when_exceeds_limit(self, MockClient):
+        """超过阈值时回收 last_active 最早的 session"""
+        instances = []
+        def make_client(**kwargs):
+            m = MagicMock()
+            m.connect = AsyncMock()
+            m.disconnect = AsyncMock()
+            instances.append(m)
+            return m
+        MockClient.side_effect = make_client
+
+        store = self._make_store({
+            "s1": {"last_active": "2026-04-16T01:00:00+00:00"},
+            "s2": {"last_active": "2026-04-16T03:00:00+00:00"},
+            "s3": {"last_active": "2026-04-16T02:00:00+00:00"},
+        })
+        dispatcher = self._make_dispatcher()
+        pool = ClientPool(MagicMock(), store=store, max_active_clients=3, dispatcher=dispatcher)
+
+        async def run():
+            await pool.get("s1")
+            await pool.get("s2")
+            await pool.get("s3")
+            assert len(pool._clients) == 3
+
+            # 第 4 个 session 触发回收
+            await pool.get("s4")
+            # s1 是 last_active 最早的，应被回收
+            assert "s1" not in pool._clients
+            assert "s4" in pool._clients
+            dispatcher.cancel_reader.assert_called_with("s1")
+
+        run_async(run())
+
+    @patch("src.pool.ClaudeSDKClient")
+    def test_preserves_metadata_after_eviction(self, MockClient):
+        """回收后 store 元数据仍保留（不调用 store.remove）"""
+        mock_instance = MagicMock()
+        mock_instance.connect = AsyncMock()
+        mock_instance.disconnect = AsyncMock()
+        MockClient.return_value = mock_instance
+
+        store = self._make_store({
+            "s1": {"last_active": "2026-04-16T01:00:00+00:00", "claude_session_id": "cid_1"},
+            "s2": {"last_active": "2026-04-16T03:00:00+00:00"},
+        })
+        pool = ClientPool(MagicMock(), store=store, max_active_clients=2, dispatcher=self._make_dispatcher())
+
+        async def run():
+            await pool.get("s1")
+            await pool.get("s2")
+            # 触发回收 s1
+            await pool.get("s3")
+            # store.remove 不应被调用（元数据保留）
+            store.remove.assert_not_called()
+
+        run_async(run())
+
+    @patch("src.pool.ClaudeSDKClient")
+    def test_resume_after_eviction(self, MockClient):
+        """回收后再次 get 同一 session 时使用 --resume"""
+        created_opts = []
+        def make_client(**kwargs):
+            m = MagicMock()
+            m.connect = AsyncMock()
+            m.disconnect = AsyncMock()
+            created_opts.append(kwargs.get("options"))
+            return m
+        MockClient.side_effect = make_client
+
+        store = self._make_store({
+            "s1": {"last_active": "2026-04-16T01:00:00+00:00", "claude_session_id": "cid_1"},
+            "s2": {"last_active": "2026-04-16T03:00:00+00:00"},
+        })
+        dispatcher = self._make_dispatcher()
+        base_opts = MagicMock()
+        pool = ClientPool(base_opts, store=store, max_active_clients=2, dispatcher=dispatcher)
+
+        async def run():
+            await pool.get("s1")
+            await pool.get("s2")
+            # 触发回收 s1
+            await pool.get("s3")
+            assert "s1" not in pool._clients
+
+            # 再次 get s1，应触发 resume
+            await pool.get("s1")
+            assert "s1" in pool._clients
+
+        run_async(run())
+
+    @patch("src.pool.ClaudeSDKClient")
+    def test_no_eviction_below_limit(self, MockClient):
+        """未超阈值时不回收"""
+        mock_instance = MagicMock()
+        mock_instance.connect = AsyncMock()
+        mock_instance.disconnect = AsyncMock()
+        MockClient.return_value = mock_instance
+
+        store = self._make_store({
+            "s1": {"last_active": "2026-04-16T01:00:00+00:00"},
+        })
+        dispatcher = self._make_dispatcher()
+        pool = ClientPool(MagicMock(), store=store, max_active_clients=5, dispatcher=dispatcher)
+
+        async def run():
+            await pool.get("s1")
+            await pool.get("s2")
+            # 只有 2 个，阈值 5，不应回收
+            assert len(pool._clients) == 2
+            mock_instance.disconnect.assert_not_called()
+            dispatcher.cancel_reader.assert_not_called()
+
+        run_async(run())
+
+    @patch("src.pool.ClaudeSDKClient")
+    def test_eviction_clears_pending(self, MockClient):
+        """回收时清空 FIFO 队列"""
+        mock_instance = MagicMock()
+        mock_instance.connect = AsyncMock()
+        mock_instance.disconnect = AsyncMock()
+        MockClient.return_value = mock_instance
+
+        store = self._make_store({
+            "s1": {"last_active": "2026-04-16T01:00:00+00:00"},
+            "s2": {"last_active": "2026-04-16T03:00:00+00:00"},
+        })
+        pool = ClientPool(MagicMock(), store=store, max_active_clients=2, dispatcher=self._make_dispatcher())
+
+        async def run():
+            await pool.get("s1")
+            await pool.get("s2")
+            pool.enqueue_message("s1", "om_1", "hello")
+            assert pool.has_pending("s1") is True
+
+            # 触发回收 s1
+            await pool.get("s3")
+            assert pool.has_pending("s1") is False
+
+        run_async(run())
+
+    @patch("src.pool.ClaudeSDKClient")
+    def test_eviction_disconnects_client(self, MockClient):
+        """回收时调用 client.disconnect()"""
+        def make_client(**kwargs):
+            m = MagicMock()
+            m.connect = AsyncMock()
+            m.disconnect = AsyncMock()
+            return m
+        MockClient.side_effect = make_client
+
+        store = self._make_store({
+            "s1": {"last_active": "2026-04-16T01:00:00+00:00"},
+            "s2": {"last_active": "2026-04-16T03:00:00+00:00"},
+        })
+        pool = ClientPool(MagicMock(), store=store, max_active_clients=2, dispatcher=self._make_dispatcher())
+
+        async def run():
+            await pool.get("s1")
+            s1_client = pool._clients["s1"]
+            await pool.get("s2")
+            # 触发回收 s1
+            await pool.get("s3")
+            s1_client.disconnect.assert_called_once()
+
+        run_async(run())
+
+    def test_active_client_count(self):
+        """active_client_count 返回当前 client 数量"""
+        pool = ClientPool(MagicMock(), max_active_clients=5)
+        assert pool.active_client_count() == 0
+
+    def test_max_active_clients_property(self):
+        """max_active_clients 属性可读"""
+        pool = ClientPool(MagicMock(), max_active_clients=3)
+        assert pool.max_active_clients == 3
+
+    def test_default_max_active_clients(self):
+        """不传 max_active_clients 时默认 5"""
+        pool = ClientPool(MagicMock())
+        assert pool.max_active_clients == 5

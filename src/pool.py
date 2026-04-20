@@ -14,6 +14,7 @@ from claude_agent_sdk import ClaudeSDKClient, ClaudeAgentOptions
 from src.config import log_debug, log_error
 
 if TYPE_CHECKING:
+    from src.session import SessionDispatcher
     from src.store import SessionStore
 
 
@@ -26,13 +27,21 @@ class ClientPool:
     可选接受 SessionStore 实例，在创建/删除 client 时同步持久化 session 映射。
     store 为 None 时所有持久化操作静默跳过（向后兼容）。
 
-    TODO: 当前 client 只增不减，每个新 session 常驻一个 claude 子进程。
-    用户量大时需要加 idle timeout 回收不活跃的 client。
+    支持 LRU 回收：当活跃 client 数超过 max_active_clients 时，回收最久未活跃的 session。
     """
 
-    def __init__(self, options: ClaudeAgentOptions, *, store: SessionStore | None = None):
+    def __init__(
+        self,
+        options: ClaudeAgentOptions,
+        *,
+        store: "SessionStore | None" = None,
+        dispatcher: "SessionDispatcher | None" = None,
+        max_active_clients: int = 5,
+    ):
         self._options = options
         self._store = store
+        self._dispatcher = dispatcher
+        self._max_active_clients = max_active_clients
         self._clients: dict[str, ClaudeSDKClient] = {}
         self._locks: dict[str, asyncio.Lock] = {}
         self._pending: dict[str, collections.deque] = {}
@@ -44,10 +53,16 @@ class ClientPool:
 
         async with self._locks[session_id]:
             if session_id not in self._clients:
+                # 超过阈值先回收最久未活跃的 client
+                while len(self._clients) >= self._max_active_clients:
+                    evicted = await self._evict_lru()
+                    if evicted is None:
+                        break  # 无可回收的 session，防止死循环
+
                 # 如果 store 中有历史 claude_session_id，用 --resume 恢复
                 opts = self._options
                 stored_sid = self.get_claude_session_id(session_id)
-                if stored_sid:
+                if stored_sid and dataclasses.is_dataclass(self._options):
                     opts = dataclasses.replace(self._options, resume=stored_sid)
                     log_debug(f"resume session: {session_id} → {stored_sid}")
 
@@ -127,6 +142,47 @@ class ClientPool:
         return set()
 
     # ── per-session 消息 FIFO ──
+
+    @property
+    def max_active_clients(self) -> int:
+        return self._max_active_clients
+
+    def active_client_count(self) -> int:
+        return len(self._clients)
+
+    def _select_lru_session(self) -> str | None:
+        """选择当前 _clients 中 last_active 最早的 session"""
+        if not self._clients:
+            return None
+        store_data: dict = {}
+        if self._store:
+            store_data = self._store.load_all()
+        def sort_key(sid: str) -> str:
+            return store_data.get(sid, {}).get("last_active", "")
+        return min(self._clients.keys(), key=sort_key)
+
+    async def _evict_lru(self) -> str | None:
+        """回收最久未活跃的 session：disconnect + cancel reader + 清空 FIFO，保留 store 元数据"""
+        session_id = self._select_lru_session()
+        if not session_id:
+            return None
+        client = self._clients.pop(session_id, None)
+        if client:
+            try:
+                await client.disconnect()
+            except Exception as e:
+                log_error(f"[Eviction] disconnect {session_id} 失败: {e}")
+        if self._dispatcher:
+            try:
+                self._dispatcher.cancel_reader(session_id)
+            except Exception as e:
+                log_error(f"[Eviction] cancel_reader {session_id} 失败: {e}")
+        pending = self._pending.pop(session_id, None)
+        pending_count = len(pending) if pending else 0
+        if pending_count > 0:
+            log_error(f"[Eviction] 丢弃 {session_id} 的 {pending_count} 条待处理消息")
+        log_debug(f"[Eviction] session={session_id} evicted (pending_dropped={pending_count})")
+        return session_id
 
     def get_client(self, session_id: str) -> ClaudeSDKClient | None:
         """获取已有 client（不创建新的）。用于 /interrupt 等需要操作现有 client 的场景。"""

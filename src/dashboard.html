@@ -38,7 +38,7 @@
   <main class="max-w-7xl mx-auto px-4 sm:px-6 py-6 space-y-6">
 
     <!-- 状态卡片区 -->
-    <section id="status-cards" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+    <section id="status-cards" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
       <!-- Uptime -->
       <div class="bg-gray-800 rounded-lg shadow-lg p-5 border-l-4 border-green-500">
         <div class="text-sm text-gray-400 mb-1">Uptime</div>
@@ -62,6 +62,15 @@
         <div class="text-sm text-gray-400 mb-1">活跃 Session</div>
         <div id="card-sessions" class="text-2xl font-bold text-purple-400">--</div>
       </div>
+      <!-- 活跃进程（回收策略容量） -->
+      <div class="bg-gray-800 rounded-lg shadow-lg p-5 border-l-4 border-yellow-500">
+        <div class="text-sm text-gray-400 mb-1">活跃进程</div>
+        <div class="flex items-baseline gap-1">
+          <span id="card-active-clients" class="text-2xl font-bold text-yellow-400">--</span>
+          <span class="text-sm text-gray-500">/</span>
+          <span id="card-max-clients" class="text-sm text-gray-500">--</span>
+        </div>
+      </div>
     </section>
 
     <!-- Session 列表 -->
@@ -72,14 +81,21 @@
           oninput="renderSessions()"
           class="px-3 py-1.5 bg-gray-800 border border-gray-600 rounded text-sm text-gray-300 placeholder-gray-500 w-64 focus:outline-none focus:border-purple-500 transition-colors" /></div>
       <div class="bg-gray-800 rounded-lg shadow-lg overflow-hidden">
-        <table class="w-full text-sm">
+        <table class="w-full text-sm table-fixed">
+          <colgroup>
+            <col class="w-auto" />
+            <col class="w-[150px]" />
+            <col class="w-[120px]" />
+            <col class="w-[80px]" />
+            <col class="w-[180px]" />
+          </colgroup>
           <thead>
             <tr class="bg-gray-750 text-gray-400 text-left">
-              <th class="px-4 py-3 bg-gray-700/50">Session ID</th>
-              <th class="px-4 py-3 bg-gray-700/50">创建时间</th>
-              <th class="px-4 py-3 bg-gray-700/50">最后活跃</th>
-              <th class="px-4 py-3 bg-gray-700/50 text-right">消息数</th>
-              <th class="px-4 py-3 bg-gray-700/50 text-center">操作</th>
+              <th class="px-4 py-3 bg-gray-700/50">Session</th>
+              <th class="px-4 py-3 bg-gray-700/50 whitespace-nowrap">创建时间</th>
+              <th class="px-4 py-3 bg-gray-700/50 whitespace-nowrap">最后活跃</th>
+              <th class="px-4 py-3 bg-gray-700/50 text-right whitespace-nowrap">消息数</th>
+              <th class="px-4 py-3 bg-gray-700/50 text-center whitespace-nowrap">操作</th>
             </tr>
           </thead>
           <tbody id="session-tbody">
@@ -168,6 +184,8 @@ async function fetchStatus() {
     }
 
     document.getElementById('card-sessions').textContent = data.active_sessions ?? '--';
+    document.getElementById('card-active-clients').textContent = data.active_clients ?? '--';
+    document.getElementById('card-max-clients').textContent = data.max_active_clients ?? '--';
   } catch (err) {
     console.error('Failed to fetch status:', err);
   }
@@ -224,23 +242,38 @@ function renderSessions() {
     var displayName = s.sender_name || id;
     var subtitle = s.chat_name ? '@ ' + escapeHtml(s.chat_name) : (id.startsWith('p2p_') ? '私聊' : '');
     return '<tr class="' + rowBg + ' hover:bg-gray-700/50 transition-colors">' +
-      '<td class="px-4 py-3">' +
+      '<td class="px-4 py-3 overflow-hidden">' +
         '<a href="/session.html?id=' + encodeURIComponent(id) + '" ' +
-          'class="text-purple-400 hover:text-purple-300 hover:underline transition-colors">' +
+          'class="text-purple-400 hover:text-purple-300 hover:underline transition-colors block truncate">' +
           '<span class="font-medium">' + escapeHtml(displayName) + '</span>' +
           (subtitle ? '<span class="text-gray-500 text-xs ml-2">' + subtitle + '</span>' : '') +
         '</a>' +
-        '<div class="text-gray-600 text-xs font-mono mt-0.5">' + escapeHtml(id) + '</div>' +
+        '<div class="text-gray-600 text-xs font-mono mt-0.5 truncate" title="' + escapeHtml(id) + '">' + escapeHtml(id) + '</div>' +
       '</td>' +
-      '<td class="px-4 py-3 text-gray-400">' + localTime(s.created_at) + '</td>' +
-      '<td class="px-4 py-3 text-gray-400" title="' + localTime(s.last_active) + '">' + relativeTime(s.last_active) + '</td>' +
-      '<td class="px-4 py-3 text-right">' + (s.message_count ?? 0) + '</td>' +
-      '<td class="px-4 py-3 text-center space-x-2">' +
+      '<td class="px-4 py-3 text-gray-400 whitespace-nowrap">' + localTime(s.created_at) + '</td>' +
+      '<td class="px-4 py-3 text-gray-400 whitespace-nowrap" title="' + localTime(s.last_active) + '">' + relativeTime(s.last_active) + '</td>' +
+      '<td class="px-4 py-3 text-right whitespace-nowrap">' + (s.message_count ?? 0) + '</td>' +
+      '<td class="px-4 py-3 text-center space-x-1 whitespace-nowrap">' +
+        '<button onclick="interruptSession(\'' + escapeHtml(id) + '\')" ' +
+          'class="px-2 py-1 text-xs bg-yellow-600 hover:bg-yellow-500 rounded transition-colors">\u4e2d\u65ad</button> ' +
         '<button onclick="clearSession(\'' + escapeHtml(id) + '\')" ' +
           'class="px-2 py-1 text-xs bg-red-600 hover:bg-red-500 rounded transition-colors">\u5220\u9664</button>' +
       '</td>' +
     '</tr>';
   }).join('');
+}
+
+// ── Interrupt Session ────────────────────────────────
+
+async function interruptSession(sessionId) {
+  try {
+    var res = await fetch('/api/sessions/' + encodeURIComponent(sessionId) + '/interrupt', { method: 'POST' });
+    if (!res.ok) throw new Error('status ' + res.status);
+    var data = await res.json();
+    alert(data.ok ? '已中断: ' + sessionId : '中断失败: ' + (data.message || '未知错误'));
+  } catch (err) {
+    alert('请求失败: ' + err.message);
+  }
 }
 
 // ── Clear Session ────────────────────────────────────

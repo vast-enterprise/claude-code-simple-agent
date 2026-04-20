@@ -32,6 +32,10 @@
       <h1 id="header-session-id" class="text-base font-bold font-mono text-purple-400 tracking-tight">--</h1>
     </div>
     <div class="flex items-center gap-2">
+      <button onclick="handleInterrupt()" id="btn-interrupt"
+        class="px-3 py-1.5 text-xs bg-yellow-600 hover:bg-yellow-500 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+        中断任务
+      </button>
       <button onclick="handleClear()" id="btn-clear"
         class="px-3 py-1.5 text-xs bg-red-600 hover:bg-red-500 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
         删除 Session
@@ -390,6 +394,21 @@ function renderToolResult(msg) {
 
 // ── 操作按钮 ──────────────────────────────────────────
 
+async function handleInterrupt() {
+  var btn = document.getElementById("btn-interrupt");
+  btn.disabled = true;
+  try {
+    var res = await fetch("/api/sessions/" + encodeURIComponent(sessionId) + "/interrupt", { method: "POST" });
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    var data = await res.json();
+    alert(data.ok ? "\u5df2\u4e2d\u65ad\u5f53\u524d\u4efb\u52a1" : "\u4e2d\u65ad\u5931\u8d25\uff1a" + (data.message || "\u672a\u77e5\u9519\u8bef"));
+  } catch (err) {
+    alert("\u8bf7\u6c42\u5931\u8d25\uff1a" + err.message);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
 async function handleClear() {
   if (!confirm('\u786e\u8ba4\u6e05\u9664 Session "' + sessionId + '" \u7684\u6d88\u606f\u5386\u53f2\uff1f\u6b64\u64cd\u4f5c\u4e0d\u53ef\u64a4\u9500\u3002')) return;
   var btn = document.getElementById("btn-clear");
@@ -443,6 +462,7 @@ window.addEventListener("scroll", function() {
   if (isHistory) {
     // 历史模式：隐藏删除按钮，更新返回链接
     document.getElementById("btn-clear").style.display = "none";
+    document.getElementById("btn-interrupt").style.display = "none";
     var backLink = document.querySelector("header a");
     if (backLink) {
       backLink.href = "/history.html";

@@ -17,5 +17,6 @@
     "enabled": true,
     "receive_id": "ou_xxx",
     "receive_id_type": "open_id"
-  }
+  },
+  "max_active_clients": 5
 }

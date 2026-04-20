@@ -10,7 +10,7 @@ import sys
 from claude_agent_sdk import ClaudeAgentOptions
 from claude_agent_sdk.types import SystemPromptPreset
 
-from src.config import ROOT, CONFIG, PERSONA, HEADLESS_RULES, DISALLOWED_TOOLS, log_debug, log_info
+from src.config import ROOT, CONFIG, PERSONA, HEADLESS_RULES, DISALLOWED_TOOLS, MAX_ACTIVE_CLIENTS, log_debug, log_info
 from src.handler import should_respond, send_message, session_reader, compute_session_id
 from src.metrics import MetricsCollector
 from src.notify import notify_error
@@ -93,9 +93,14 @@ async def main():
     log_info("飞书事件监听已启动，等待消息...")
 
     store = SessionStore(ROOT / "data" / "sessions.json")
-    pool = ClientPool(options, store=store)
-    metrics = MetricsCollector()
     dispatcher = SessionDispatcher()
+    pool = ClientPool(
+        options,
+        store=store,
+        dispatcher=dispatcher,
+        max_active_clients=MAX_ACTIVE_CLIENTS,
+    )
+    metrics = MetricsCollector()
 
     server_runner = await start_server(pool, metrics, port=8420)
 

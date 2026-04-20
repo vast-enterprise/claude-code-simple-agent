@@ -113,6 +113,8 @@ async def _handle_status(request):
     pool = request.app["pool"]
     s = metrics.status()
     s["active_sessions"] = len(pool.list_sessions())
+    s["active_clients"] = pool.active_client_count()
+    s["max_active_clients"] = pool.max_active_clients
     return _json(s)
 
 
@@ -159,6 +161,19 @@ async def _handle_session_compact(request):
                     return _json({"ok": False, "message": "压缩失败", "session_id": session_id})
                 break
         return _json({"ok": True, "message": "会话已压缩", "session_id": session_id})
+    except Exception as e:
+        return _json({"ok": False, "message": str(e), "session_id": session_id})
+
+
+async def _handle_session_interrupt(request):
+    session_id = request.match_info["session_id"]
+    pool = request.app["pool"]
+    client = pool.get_client(session_id)
+    if not client:
+        return _json({"ok": False, "message": "当前没有活跃会话", "session_id": session_id})
+    try:
+        await client.interrupt()
+        return _json({"ok": True, "message": "已中断当前任务", "session_id": session_id})
     except Exception as e:
         return _json({"ok": False, "message": str(e), "session_id": session_id})
 
@@ -279,6 +294,7 @@ def _create_app(pool, metrics) -> web.Application:
     app.router.add_get("/api/sessions/{session_id}/conversation", _handle_session_conversation)
     app.router.add_post("/api/sessions/{session_id}/clear", _handle_session_clear)
     app.router.add_post("/api/sessions/{session_id}/compact", _handle_session_compact)
+    app.router.add_post("/api/sessions/{session_id}/interrupt", _handle_session_interrupt)
 
     return app
 

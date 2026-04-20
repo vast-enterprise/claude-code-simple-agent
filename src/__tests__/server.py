@@ -17,6 +17,8 @@ class TestServerAPI(AioHTTPTestCase):
             "p2p_ou_test": {"message_count": 5, "last_active": "2026-04-13T10:00:00Z", "created_at": "2026-04-13T09:00:00Z"}
         }
         self.mock_pool.remove = AsyncMock(return_value=True)
+        self.mock_pool.active_client_count.return_value = 0
+        self.mock_pool.max_active_clients = 5
 
         self.metrics = MetricsCollector()
         self.metrics.record_message("p2p_ou_test", "hello", True, "hi there")

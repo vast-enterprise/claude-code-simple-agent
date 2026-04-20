@@ -55,3 +55,4 @@ HEADLESS_RULES = """
 - 所有输出通过飞书消息返回，保持简洁
 """
 NOTIFY_CONFIG: dict = CONFIG.get("notify", {"enabled": False})
+MAX_ACTIVE_CLIENTS: int = CONFIG.get("max_active_clients", 5)
