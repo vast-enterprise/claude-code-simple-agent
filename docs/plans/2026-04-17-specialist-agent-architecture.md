@@ -1,12 +1,26 @@
 # Tripo Specialist Agent 架构设计
 
 > 日期：2026-04-17
-> 状态：待实施（P0 未启动）
+> 状态：P1-P7 已完成，P8 主 agent 改造进行中
 > 来源：`tmp/2026-04-17-cross-retro-action-plan.md` Track A
+
+## 改动记录
+
+- **2026-04-20**：架构由 **8 specialist** 调整为 **7 specialist**——notify agent 合并进 scrum-master。
+  - 原因 1:scrum-master body 的 B 分支（飞书通知）已完整覆盖 R1-R4 / B1-B2 所有通知节点，技能绑定也已包含 `tripo-notify` + `lark-im`
+  - 原因 2:**原子性要求**——"发通知 + AskUserQuestion 阻塞 + 接收用户回话后推进状态"是一个不可拆的原子动作（对应铁律 6）。拆成独立 notify 会让阻塞环节跨 agent 边界，阻塞语义容易断裂
+  - 原因 3:**身份范式冲突**——"传声筒"没有独立的职业耻辱，与身份驱动范式（§4）的核心假设不符。合并到 scrum-master 后，通知是"流程前台"身份的内在动作，有完整的守护姿态
+  - 影响：§3.1 Agent 清单删除 notify 行；§7 P8 phase 目标从"新建 notify + 主 agent 改造"改为"仅主 agent 改造为纯路由"
+
+- **2026-04-20（补丁）**：scrum-master skills 清单**增补流程 skill**（`tripo-requirement`, `tripo-bugfix`, `tripo-release`）——用于**状态变更的对号入座校验**，不改变"流程编排归主 agent"的职责分工。
+  - 背景：code review 发现 scrum-master 实际 frontmatter 已绑定三个流程 skill，但架构文档 §3.1 未列——存在文档-实现分歧
+  - 决策：保留绑定（路径 B）。理由：scrum-master 作为"流程前台守门人"需要流程知识做二次校验（"主 agent 派给我的状态变更，对应的是不是当前 step？"），否则守门人变操作员
+  - 防身份滑落：scrum-master body 需显式声明"我加载流程 skill 只用于对号入座校验，不自己判断流程走到哪一步"，见 scrum-master.md body
+  - **语义区分**：`加载流程 skill（读）` ≠ `流程编排（决定下一步派谁做什么）`。前者是 scrum-master 的校验能力，后者仍归主 agent
 
 ## 1. 定位
 
-为 Tripo 工作调度中枢设计一套 **8 specialist + 1 主路由** 的 agent 架构，把当前主 agent 承担的所有实际工作外包给专业 subagent，主 agent 退化为纯路由器。
+为 Tripo 工作调度中枢设计一套 **7 specialist + 1 主路由** 的 agent 架构，把当前主 agent 承担的所有实际工作外包给专业 subagent，主 agent 退化为纯路由器。
 
 **目标**：
 - 主 agent 上下文去肥——不再被 13 个 skill description + 12 条铁律挤爆注意力
@@ -46,8 +60,7 @@
 | **diagnose** | Opus | 问题定位 | `tripo-diagnose` | 用户报 bug / 现象 |
 | **tester** | Sonnet | 集成测试 | `tripo-test` | requirement step 8 / bugfix step 5 |
 | **release** | Sonnet | 发版发车 | `tripo-release`, `tripo-repos` | requirement step 10 |
-| **scrum-master** | Sonnet | 表格状态流转、STATUS.md | `tripo-tables`, `tripo-task-dirs` | 状态变更 / 录入 |
-| **notify** | Haiku | 飞书通知 | `tripo-notify`, `lark-im` | 所有通知节点 |
+| **scrum-master** | Sonnet | 表格状态流转、STATUS.md、**飞书通知（R1-R4 / B1-B2）** | `tripo-tables`, `tripo-notify`, `tripo-task-dirs`, `tripo-requirement`, `tripo-bugfix`, `tripo-release`, `lark-im`, `lark-base`, `lark-wiki`, `lark-shared` | 状态变更 / 录入 / 通知节点 |
 
 ### 3.2 运行模式
 
@@ -307,15 +320,16 @@ bench/
 - 重点铁律 11（部署前确认）
 - 跑 benchmark
 
-### P7：scrum-master agent
+### P7：scrum-master agent（含飞书通知）
 
-- 重点铁律 6 & 8（通知阻塞、状态流转必先加载 skill）
+- 按身份驱动范式落地"未经明确授权不动表" + "发完通知停下等用户回话"两条底线
+- R1-R4 / B1-B2 所有通知节点的 B 分支 body 化，阻塞语义嵌入身份而非规则列表
 - 跑 benchmark
 
-### P8：notify agent + 主 agent 改造为纯路由
+### P8：主 agent 改造为纯路由（身份化）
 
-- 注意：notify 用 Haiku（高频调用成本敏感）
-- 主 agent body 精简，只留流程判断+派发逻辑
+- 主 agent body 精简，只留"调度中枢管家"身份 + 7 个 specialist 派发规则
+- 按身份驱动范式重写（见 `docs/plans/2026-04-17-identity-driven-agent-paradigm.md`）
 - 跑最终 benchmark
 
 ## 8. 风险与回退
