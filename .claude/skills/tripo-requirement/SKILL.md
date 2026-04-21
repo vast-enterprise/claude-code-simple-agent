@@ -57,7 +57,7 @@ description: |
 | 2 | 归类与录入 | [steps/2-record.md](references/steps/2-record.md) |
 | 3 | 需求评审 | [steps/3-review.md](references/steps/3-review.md) |
 | 4 | 进入执行表 | [steps/4-enter-execution.md](references/steps/4-enter-execution.md) |
-| 5 | 技术评审 | [steps/5-tech-review.md](references/steps/5-tech-review.md) |
+| 5 | 技术评审（方案 + 原型） | [steps/5-tech-review.md](references/steps/5-tech-review.md) |
 | 6 | 编码开发 | [steps/6-develop.md](references/steps/6-develop.md) |
 | 7 | 创建 PR | [steps/7-pr.md](references/steps/7-pr.md) |
 | 8 | 自动化闭环 | [steps/8-test.md](references/steps/8-test.md) |
@@ -82,7 +82,7 @@ description: |
 | 步骤 | 触发时机 |
 |------|---------|
 | 3 | review.md 输出后 |
-| 5 | technical-solution.md 输出后 |
+| 5 | technical-solution.md + prototype/index.html 都输出后（原型不适用时仅方案） |
 | 8 | Review + 测试通过后 |
 | 10 | 用户验收通过 → 发车候选入队后 |
 
@@ -102,6 +102,8 @@ description: |
 - `tripo-release` skill - **独立的发车上线流程**（13 步编排）,本 skill 只到「提交发车候选」,不调用 release 的发车编排
 
 ### 方法论 skill（步骤内加载）
+- `tripo-architecture` skill - 技术方案方法论（步骤 5a 加载）：方案对比、选型矩阵、跨仓库契约
+- `tripo-frontend-design` skill - 视觉原型方法论（步骤 5b 加载）：原型产物规范、aesthetic 方向、交接清单
 - `tripo-dev` skill - 编码方法论（步骤 6 加载）：先理解再编码、运行时验证、完成 Checklist
 - `tripo-test` skill - 测试方法论（步骤 8 加载）：工具-证据映射、证据先贴结论、计划先于执行
 - `tripo-diagnose` skill - 诊断方法论（异常处理时加载）：优先级阶梯、环境边界、失败回退

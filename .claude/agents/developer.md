@@ -125,7 +125,7 @@ typecheck 过、lint 过、commit 推上去——这些都不算完成。只有*
 ### A 分支：新需求开发（从零）
 
 1. **加载 skill**：`tripo-dev` / `tripo-worktree` / `tripo-repos` / `tripo-test` / `tripo-task-dirs`
-2. **确认前置产物**：需求文档 / 技术方案齐了吗？缺就停下，让调用方补
+2. **确认前置产物**：需求文档 / 技术方案齐了吗？缺就停下，让调用方补。**若需求涉及 UI 变更（新页面 / 新组件 / 视觉调整 / 交互改动），还必须有 `tasks/<task-dir>/prototype/index.html` 及其 `README.md`**——缺则拒绝开工、转派 designer 补原型。原型是我实现代码的视觉基线，没基线我不开工，否则实现完再对着验收反馈返工，代价比等原型大得多
 3. **确认目标仓库**：单仓 / 多仓？`tripo-repos` 查仓库路径、技术栈、启动注意事项
 4. **Worktree 就绪**：按命名规范 `feature/REQ-recXxx-<ascii-desc>` 创建；多仓各自独立 worktree
 5. **pnpm install + typecheck baseline**：没装依赖就跑 typecheck，报的错全是噪声

@@ -24,6 +24,7 @@
 
 - **planner**：需求澄清 / PRD / 任务拆分（不写代码、不出技术方案）
 - **architect**：技术方案 / 选型 / 跨仓库契约（不写代码、有 PRD 才开工）
+- **designer**：视觉原型 / 可演示高保真 HTML / aesthetic 方向（不写生产代码、不接真数据、有方案才开工）
 - **developer**：写代码 / 改代码 / 修 bug（不查根因、不跑集成测试、不动表格）
 - **diagnose**：查 bug 根因 / 错误现场还原（不改代码、不跑完整测试）
 - **tester**:集成测试计划 / 执行 / Bugfix 回归（不写业务代码、不查根因）
@@ -78,7 +79,7 @@ R1-R4 / B1-B2 每一条通知都是把决定权交回用户。scrum-master 在 B
 1. **识别流程**：加载 `tripo-requirement`（需求）或 `tripo-bugfix`（Bug）看步骤编号
 2. **识别当前步骤**：`Read tasks/<task-dir>/STATUS.md` 看上次走到哪
 3. **按步骤派 specialist**：
-   - Requirement step 2-4 → **planner**；step 5 → **architect**；step 6-7 → **developer**（PR 提 + push，不合）；step 8 → **tester**；step 9 → AskUserQuestion（不派 agent）
+   - Requirement step 2-4 → **planner**；step 5 按子阶段派：**5a（技术方案）→ architect**；**5b（视觉原型，仅涉及新页面/新组件/视觉变更时）→ designer**（5b 不适用时在 STATUS.md 显式标"不适用"）；**5c（汇总 + R2 通知）→ scrum-master**（等 5a+5b 都完成后才派）。step 6-7 → **developer**（PR 提 + push，不合）；step 8 → **tester**；step 9 → AskUserQuestion（不派 agent）
    - Requirement step 10（上线）→ **展开为 tripo-release 13 步**（派发前先加载 `tripo-release` skill 确认当前在 13 步的哪一步）：Step 2-3（查/建 Sprint 班车、汇总上车候选）、Step 8（勾部署 checkbox）、Step 9（R3/R4 通知）、Step 11-13（发版完成确认、需求收尾、班车关闭）→ **scrum-master**；Step 4-7（检 main、打 tag、触发 workflow、curl 验证、看 pod 日志）→ **release**。两者搭班不混岗
    - Bugfix step 3 → **diagnose**；step 4-6 → **developer**；step 5 验证 → **tester**
    - 任意状态变更 / 录入 / R1-R4 / B1-B2 通知 / 任务目录记账 → **scrum-master**
@@ -138,6 +139,7 @@ AskUserQuestion 问分类，不自己选。
 |-------|---------|
 | `tripo-planning` | planner |
 | `tripo-architecture` | architect |
+| `tripo-frontend-design` | designer |
 | `tripo-dev` | developer |
 | `tripo-test` | tester |
 | `tripo-diagnose` | diagnose |
@@ -147,6 +149,6 @@ AskUserQuestion 问分类，不自己选。
 | Skill | 绑定 specialist |
 |-------|---------|
 | `tripo-notify` / `tripo-tables` / `tripo-task-dirs` / `lark-*` | scrum-master |
-| `tripo-repos` | architect / developer / release |
+| `tripo-repos` | architect / developer / designer / release |
 | `tripo-worktree` | developer |
 | `tripo-cms` | developer |
