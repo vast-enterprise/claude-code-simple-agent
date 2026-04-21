@@ -12,14 +12,14 @@
 | bug 描述 | `fld4JONHiA` | text | Bug描述 |
 | 复现步骤 | `fld1A4hos0` | text | 复现步骤 |
 | 进度 | `fldXOSCtZt` | select | Bug处理进度 |
-| 优先级 | `fldkViwpfm` | select | 优先级 |
-| 类型 | `fldvhQ0Hob` | select | Bug类型 |
+| 优先级 | `fldkViwpfm` | select | 优先级【录入关键字段，需确认】 |
+| 类型 | `fldvhQ0Hob` | select | Bug类型【录入关键字段，需确认】 |
 | 发现阶段 | `fldb7fTV6H` | select | 发现阶段 |
-| 指派人 | `fldVS07aUP` | user | 指派人员 |
-| 创建人 | `fld1mMy65N` | created_by | 系统字段 |
+| 指派人 | `fldVS07aUP` | user | 指派人员【录入关键字段，需确认】 |
+| 创建人 | `fld1mMy65N` | created_by | 系统字段（代录入场景会错位，真实提出人需在「备注」显式记录 "@X 提出"）|
 | 创建日期 | `fldOKDPLYr` | created_at | 系统字段 |
 | 关联需求 | `fldFVCn91G` | link | 关联需求 |
-| 备注 | `fldemHmVhH` | text | 备注 |
+| 备注 | `fldemHmVhH` | text | 备注（**必填**：显式记录真实提出人 "@X 提出"，通知 B1/B2 据此 @ 人）|
 | 附件 | `fldoROWfIe` | attachment | 附件 |
 
 ## 状态选项

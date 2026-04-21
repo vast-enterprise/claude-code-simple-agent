@@ -8,7 +8,7 @@
 | 字段名 | Field ID | 类型 | 说明 |
 |--------|----------|------|------|
 | 状态 | `fldlb7BtiZ` | select | 需求执行状态 |
-| 需求来源 | `fldymnWlrk` | select | 需求来源分类 |
+| 需求来源 | `fldymnWlrk` | select | 需求来源分类（功能/运营/UI；**不是 link 字段，不能回查来源池记录**）|
 | 需求类型 | `fldUF6s1nQ` | select | 需求类型分类 |
 | 风险归类 | `fldkQM4Mz6` | select | 风险等级 |
 | 产品Owner | `fld8K6pMOg` | user | 产品负责人 |

@@ -8,12 +8,12 @@
 | 字段名 | Field ID | 类型 | 说明 |
 |--------|----------|------|------|
 | 需求提出日期 | `fldl4EsNYi` | datetime | 需求创建时间 |
-| 需求Owner | `fldeFXWrBP` | user | 需求负责人 |
-| 研发Owner | `fldcrC0dNU` | user | 研发负责人 |
+| 需求Owner | `fldeFXWrBP` | user | 需求负责人（默认 = 提出人，代录入时可修正）【录入关键字段，需确认】 |
+| 研发Owner | `fldcrC0dNU` | user | 研发负责人【录入关键字段，需确认】 |
 | 测试Owner | `fldpu0tTDa` | user | 测试负责人 |
 | 需求状态 | `fldrcs9dZA` | select | 需求当前状态 |
-| 绝对优先级 | `fldEoiYN2X` | select | 优先级排序 |
-| 需求池 | `fldboFiGvi` | select | 需求池分类 |
+| 绝对优先级 | `fldEoiYN2X` | select | 优先级排序【录入关键字段，需确认】 |
+| 需求池 | `fldboFiGvi` | select | 需求池分类【录入关键字段，需确认】 |
 | 需求描述 | `fldSJQfqQD` | text | 简要描述 |
 | 需求详细描述 | `fldQ2spTUo` | text | 详细描述（可附文档） |
 | 技术评审文档 | `fldjaF5fXE` | text | 技术评审链接 |

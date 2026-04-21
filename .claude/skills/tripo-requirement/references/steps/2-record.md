@@ -11,7 +11,13 @@
    - 产品需求 → 产品需求池
    - 技术需求 → 技术需求池
 
-2. **录入需求池**（→ tripo-tables，字段详情见对应表的 references）：
+2. **录入前：向用户确认关键字段**（→ tripo-tables 的「录入前确认机制」）
+
+   关键字段清单：查目标表 `fields-*.md`（产品需求池 → `fields-product-pool.md`；技术需求池 → `fields-tech-pool.md`）中标注【录入关键字段，需确认】的字段。
+   
+   本流程关键字段包括：`需求Owner`（= 提出人）、`研发Owner`、`绝对优先级`、`需求池分类`。确认措辞模板见 `tripo-tables` SKILL。
+
+3. **录入需求池**（→ tripo-tables，字段详情见对应表的 references）：
    - 一句话描述需求
    - 需求详细描述（可附文档）
    - 需求Owner、研发Owner
@@ -20,12 +26,13 @@
    - 绝对优先级
    - 需求状态 = "未启动"
 
-3. **更新任务目录**（→ tripo-task-dirs）：
+4. **更新任务目录**（→ tripo-task-dirs）：
    - 重命名目录（临时 ID → 实际 ID）
    - 更新 STATUS.md
 
 ## 如何定义完成
 
+- [ ] 录入前已按 tripo-tables 的「录入前确认机制」向用户确认关键字段
 - [ ] 需求已录入对应表格
 - [ ] 已获取 record-id
 - [ ] 任务目录名已更新（如有临时 ID）
