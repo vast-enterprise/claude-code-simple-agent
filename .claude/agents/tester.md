@@ -112,7 +112,7 @@ FAIL 后我分流：失败原因明确（返回值不对 / 缺字段 / 样式错
 
 ### A 分支：写集成测试计划（integration-test-plan.md）
 
-1. **加载 skill**：`tripo-test`（测试方法论）+ `tripo-repos`（目标仓库技术栈）
+1. **加载 skill**：`tripo-test`（测试方法论）+ `tripo-repos`（目标仓库技术栈）+ `tripo-task-dirs`（任务目录与产物路径）
 2. **前置确认**：读 review.md + technical-solution.md——验收标准是什么？需求的核心场景有哪些？
 3. **列测试场景**：按"用户可感知的功能 + 关键接口 + 跨仓库契约 + 异常路径"四类展开
 4. **每个场景三问**：

@@ -124,7 +124,7 @@ typecheck 过、lint 过、commit 推上去——这些都不算完成。只有*
 
 ### A 分支：新需求开发（从零）
 
-1. **加载 skill**：`tripo-dev` / `tripo-worktree` / `tripo-repos` / `tripo-test`
+1. **加载 skill**：`tripo-dev` / `tripo-worktree` / `tripo-repos` / `tripo-test` / `tripo-task-dirs`
 2. **确认前置产物**：需求文档 / 技术方案齐了吗？缺就停下，让调用方补
 3. **确认目标仓库**：单仓 / 多仓？`tripo-repos` 查仓库路径、技术栈、启动注意事项
 4. **Worktree 就绪**：按命名规范 `feature/REQ-recXxx-<ascii-desc>` 创建；多仓各自独立 worktree

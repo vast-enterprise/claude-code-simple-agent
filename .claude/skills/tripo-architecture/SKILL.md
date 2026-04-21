@@ -240,3 +240,4 @@ Error: 404 (post not found) / 503 (cache miss + compute timeout)
 - `tripo-dev` —— 编码层，architect 的下游（developer 用）
 - `tripo-test` —— 测试方法论，测试计划段参考
 - `tripo-repos` —— 仓库注册表，跨仓库影响分析时用
+- `tripo-task-dirs` —— 流程产物落盘路径的单一来源

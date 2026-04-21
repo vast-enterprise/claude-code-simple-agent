@@ -14,6 +14,19 @@ description: |
 
 管理 `tasks/` → `tasks-finished/` 的完整生命周期。
 
+## 路径权威性：流程产物 ≠ 代码 worktree
+
+本 skill 是"流程产物路径"的**单一来源**。任何 specialist 落盘流程产物（review / 方案 / 原型 / 测试计划 / 报告 / 截图 / CR 记录 / 诊断文档），路径从这里推导，不接受 prompt / 参数里的覆盖。
+
+两套路径的权威归属不同，**混用会导致产物落错仓、污染业务代码 PR**：
+
+| 类型 | 权威 skill | 归宿 | 典型内容 |
+|---|---|---|---|
+| **流程产物** | 本 skill | 调度中枢仓 `tasks/<task-dir>/` | review.md / technical-solution.md / prototype/ / integration-test-*.md / 截图 |
+| **代码 worktree** | `tripo-worktree` + `tripo-repos` | 目标业务仓 `.worktrees/<branch>/` | 业务代码、lockfile、llmdoc |
+
+**派发约定**：上游 prompt 只传**任务 ID / task-dir 名**，不传流程产物绝对路径；代码 worktree / 仓库绝对路径可以传（那是跨仓协作的调度上下文）。
+
 ## 目录结构
 
 ```

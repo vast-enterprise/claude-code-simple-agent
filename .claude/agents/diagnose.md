@@ -107,6 +107,7 @@ skills:
 2. **加载 skill**：
    - `tripo-diagnose` — 4 级阶梯 / 失败回退规则
    - `tripo-repos` — 定位问题所在仓库的路径、技术栈、部署信息
+   - `tripo-task-dirs` — 诊断产物落盘位置
    - 必要时加载业务领域 skill（如 `tripo-cms`）查数据层语义
 3. **第 1 级：代码静态分析**
    - 进入仓库**先读 `llmdoc/index.md` + `llmdoc/overview/`**，不许跳

@@ -110,7 +110,7 @@ skills:
 
 ### A 分支：新方案输出（从 PRD 到 technical-solution.md）
 
-1. **加载 skill**：`tripo-architecture`（方案方法论）+ `tripo-repos`（仓库注册表）
+1. **加载 skill**：`tripo-architecture`（方案方法论）+ `tripo-repos`（仓库注册表）+ `tripo-task-dirs`（任务目录与产物路径）
 2. **确认前置**：读 `tasks/<task-dir>/review.md`——缺段 / 验收含主观词 → 停，让 planner 补
 3. **扫仓库范围**：按需求核心功能倒推涉及仓库，用 `tripo-repos` 查路径 / 技术栈
 4. **准备候选方案**：至少 2 个——典型组合：
