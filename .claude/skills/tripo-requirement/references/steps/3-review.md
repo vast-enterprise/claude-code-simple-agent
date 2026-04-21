@@ -29,13 +29,14 @@
      - 问题与风险
      - 评审结论
 
-4. **更新 STATUS.md**（→ tripo-task-dirs）
+4. **派 scrum-master 同步 Wiki + 更新 STATUS.md**（→ tripo-task-dirs wiki 同步铁律）
 
 5. **提议状态变更**：
    - 需求状态 → "定容确认"
 
 6. **飞书通知用户**（→ tripo-notify，节点 R1）：
-   通知后**暂停**，等待用户确认。
+   - 消息模板的 `<Wiki链接>` 从 STATUS.md 的关联资源区读取
+   - 通知后**暂停**，等待用户确认
 
 7. **等待用户确认容量**
 
@@ -43,6 +44,7 @@
 
 - [ ] 合规与风险审查已完成（无风险 或 风险已在 review.md 中标注）
 - [ ] review.md 已输出
-- [ ] STATUS.md 已更新
+- [ ] review.md 已按 tripo-task-dirs wiki 同步铁律处理（Wiki 已同步、`node_token` 记入 STATUS.md 关联资源区）
 - [ ] 已提议状态变更为"定容确认"
+- [ ] R1 通知消息模板的 Wiki 链接已从 STATUS.md 读取并填入
 - [ ] 用户已确认容量（进入下一步）

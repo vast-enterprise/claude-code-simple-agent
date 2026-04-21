@@ -18,15 +18,12 @@
      - 受影响范围清单
      - 修复建议
 
-4. **Wiki 同步**（→ tripo-task-dirs wiki 同步规则）：
-   - 将 bug-investigation.md 同步到飞书 wiki
+4. **派 scrum-master 同步 Wiki + 更新 STATUS.md**（→ tripo-task-dirs wiki 同步铁律）
 
 5. **飞书通知相关人员**（→ tripo-notify，节点 B1）：
    通知后**暂停**，等待确认后继续
 
-6. **更新 STATUS.md**（→ tripo-task-dirs）
-
-7. **更新 Bug 表**（→ tripo-tables）：
+6. **更新 Bug 表**（→ tripo-tables）：
    - 进度：Open → In progress
    - 更新 `复现步骤` 字段（补充根因分析）
 
@@ -35,6 +32,6 @@
 - [ ] 根因已定位到具体代码位置
 - [ ] 受影响范围已列出完整清单
 - [ ] bug-investigation.md 已输出
-- [ ] Wiki 已同步
+- [ ] bug-investigation.md 已按 tripo-task-dirs wiki 同步铁律处理（Wiki 已同步、`node_token` 记入 STATUS.md 关联资源区）
 - [ ] 已通知相关人员并等待确认
 - [ ] Bug 表已更新为 In progress

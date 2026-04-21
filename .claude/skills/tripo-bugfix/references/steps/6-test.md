@@ -69,6 +69,7 @@
 - [ ] 6.2 测试计划文档已输出
 - [ ] 6.3 集成测试已通过
 - [ ] 6.4 验证报告已输出
+- [ ] 6.1 / 6.2 / 6.4 的 `.md` 产物均已按 tripo-task-dirs wiki 同步铁律处理（Wiki 已同步、`node_token` 记入 STATUS.md）
 
 **以上 checklist 必须逐项确认全部 ✅ 后才可发送通知。缺任何一项即禁止通知。**
 
@@ -82,4 +83,5 @@
 - [ ] 测试计划文档已输出
 - [ ] 集成测试已执行，通过
 - [ ] 验证报告已输出
+- [ ] `code-review-*.md` / `integration-test-plan.md` / `integration-test-report.md` 均已按 tripo-task-dirs wiki 同步铁律处理
 - [ ] 已通知用户

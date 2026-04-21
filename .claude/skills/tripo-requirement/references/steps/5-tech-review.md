@@ -47,9 +47,12 @@
 
 **必须等 5a 和 5b 都完成后才执行**（5b 不适用时只等 5a）：
 
-1. **更新 STATUS.md**（→ tripo-task-dirs）：标注"5a 完成、5b 完成或不适用"
+1. **派 scrum-master 同步 Wiki + 更新 STATUS.md**（→ tripo-task-dirs wiki 同步铁律）：
+   - `technical-solution.md` 走同步链
+   - 原型 `prototype/index.html` 保留在 `tasks/<task-dir>/` 下供直接打开，**不同步 wiki**（HTML 在 wiki 里不可交互）
+   - 5a/5b 完成状态记入 STATUS.md
 2. **飞书通知用户**（→ tripo-notify，节点 R2）：
-   - 消息模板同时附 `technical-solution.md` 链接 + `prototype/index.html` 链接（后者视 5b 触发情况）
+   - 消息模板的方案链接从 STATUS.md 读取 Wiki URL；原型链接保持 `tasks/<task-dir>/prototype/index.html`
    - 通知后**暂停**，等待用户确认
 3. **提议状态变更**：
    - 执行表"技术评审"字段 → "完成"
@@ -60,8 +63,9 @@
 - [ ] 5a：`technical-solution.md` 已输出，方案对比 / 详设 / 工作量 / 风险 / 回退齐全
 - [ ] 5b：若需求涉及 UI 变更，`prototype/index.html` 已产出且浏览器跑通；若无 UI 变更，STATUS.md 显式标注"不适用"
 - [ ] 5b 触发时，`prototype/README.md` 的验收点映射表与 `review.md` 验收标准一一对应
+- [ ] `technical-solution.md` 已按 tripo-task-dirs wiki 同步铁律处理（Wiki 已同步、`node_token` 记入 STATUS.md 关联资源区）
 - [ ] STATUS.md 已更新（5a/5b 状态清晰）
 - [ ] 已提议"技术评审"="完成"
 - [ ] 执行表"计划提测时间"已根据工作量更新
-- [ ] R2 通知消息模板同时附方案 + 原型链接（原型适用时）
+- [ ] R2 通知消息模板的方案链接从 STATUS.md 读取 Wiki URL；原型链接同时附上（原型适用时）
 - [ ] 用户已确认方案 + 原型

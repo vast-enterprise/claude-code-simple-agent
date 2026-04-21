@@ -32,11 +32,12 @@ CMS 相关文档（根节点）
 
 | 本地文件 | 产生阶段 | Wiki 标题 |
 |----------|---------|-----------|
-| review.md | 步骤 3 需求评审 | 需求评审 |
-| technical-solution.md | 步骤 5 技术评审 | 技术方案 |
-| code-review-*.md | 步骤 8.1 Code Review | 代码审查报告 |
-| integration-test-plan.md | 步骤 8.2 测试计划 | 集成测试计划 |
-| integration-test-report.md | 步骤 8.4 验证报告 | 集成测试报告 |
+| review.md | requirement 步骤 3 需求评审 | 需求评审 |
+| technical-solution.md | requirement 步骤 5 技术评审 | 技术方案 |
+| bug-investigation.md | bugfix 步骤 3 调查 | Bug 定位报告 |
+| code-review-*.md | requirement 步骤 8.1 / bugfix 步骤 6.1 Code Review | 代码审查报告 |
+| integration-test-plan.md | requirement 步骤 8.2 / bugfix 步骤 6.2 测试计划 | 集成测试计划 |
+| integration-test-report.md | requirement 步骤 8.4 / bugfix 步骤 6.4 验证报告 | 集成测试报告 |
 
 不同步的文件：
 - STATUS.md（频繁变更，仅本地跟踪）

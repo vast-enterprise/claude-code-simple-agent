@@ -79,6 +79,12 @@ Bug: <描述>
 | 3 | Bug 定位报告输出 + Wiki 同步后 |
 | 6 | Code Review + 集成测试全部通过后 |
 
+## 全流程通用规则：产物 → Wiki → 通知
+
+**凡在 `tasks/<task-dir>/` 下写入 `.md` 产物（STATUS.md 除外），一律按 `tripo-task-dirs` 的 wiki 同步铁律处理**——无论属于哪个步骤。产物落盘 → Wiki 同步 → `node_token` 记入 STATUS.md 关联资源区 → 随后的通知引用 Wiki URL，四环一个闭环，断一环即不算完成。
+
+涉及的产物（跨步骤汇总）：`bug-investigation.md`（步骤 3）、`code-review-*.md`（步骤 6.1）、`integration-test-plan.md`（步骤 6.2）、`integration-test-report.md`（步骤 6.4）。详细映射 / 同步流程 / STATUS.md 记账格式 / 通知 URL 规范全部归 `tripo-task-dirs`，本 skill 不复述。
+
 ## 铁律（违反 = 3.25）
 
 ### 🔒 禁止未经确认操作生产环境
