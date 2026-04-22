@@ -1,57 +1,29 @@
-# API 认证与环境配置
+# CMS API 认证与登录（CMS 特有）
 
-## 环境列表
+> 通用认证元数据（URL、API Key 变量名、共享账户、Playwright 凭证变量）→ `tripo-repos` 的 tripo-cms "认证与凭证"段
+> 禁止动作（不写 users.hash/salt/apiKey 等）→ `developer` / `tester` / `diagnose` agent "我不越的线"
+> 本文只记录 Payload CMS 特有、别处无法复用的内容
 
-| 环境 | Base URL | 用途 |
-|------|----------|------|
-| development | `http://localhost:3000` | 本地开发调试 |
-| staging | `https://cms-staging.itripo3d.com` | 测试验证 |
-| production | `https://cms.itripo3d.com` | 线上操作 |
+## Payload 登录失败常见原因（诊断时参考）
 
-> 环境 URL 也可从 tripo-repos skill 获取（部署信息表），以 tripo-repos 为准。
+1. `.env` 里的明文密码与 DB 里 `hash` 对应的明文不一致（被人改过但 `.env` 没同步）
+2. `loginAttempts` 爆表，`lockUntil` 锁着账户（登录返回消息含 "locked"）
+3. Payload 版本升级后 hash 算法变更（罕见但可能）
+4. `apiKey / apiKeyIndex / enableAPIKey` 脏数据阻塞登录流程
 
-## API Key 认证
+## 密码对不上时的合法恢复路径
 
-CMS 使用 Payload CMS 内置的 API Key 机制（`Users.auth.useAPIKey: true`）。
+1. 停下 AskUserQuestion：要换已知密码还是需要先还原某个原值
+2. 用户授权后走 Payload 官方流程（任选其一）：
+   - Payload admin UI 的 "Forgot Password"
+   - `POST /api/users/forgot-password` + `POST /api/users/reset-password`（走 auth 钩子、不绕过任何业务逻辑）
+3. **不**走 `db.users.updateOne({$set: {hash, salt}})`——无论"改回原值"还是"设新值"
 
-### 请求头格式
+## Payload auth 字段速查（只读诊断用）
 
-```
-Authorization: users API-Key <your-api-key>
-```
-
-### Skill 专用账户
-
-| 环境 | 邮箱 | 角色 |
-|------|------|------|
-| staging | `aibot@tripo3d.ai` | admin |
-| production | `aibot@tripo3d.ai` | admin |
-
-### API Key 配置
-
-API Key 存储在项目根目录的 `.env` 文件中（已 gitignore）：
-
-```bash
-CMS_STAGING_API_KEY="<staging-key>"
-CMS_PROD_API_KEY="<prod-key>"
-```
-
-使用前加载：`source .env`
-
-### 使用示例
-
-```bash
-# 查询 staging 环境的文章
-curl -H "Authorization: users API-Key $CMS_STAGING_API_KEY" \
-  "https://cms-staging.itripo3d.com/api/posts?limit=5"
-```
-
-## 安全规则
-
-| 规则 | 说明 |
-|------|------|
-| 生产写操作需确认 | production 的 POST/PATCH/DELETE 必须先展示操作内容，用户确认后执行 |
-| 批量操作需 dry-run | 影响 >10 条记录时，先用 GET 查询展示将被影响的记录 |
-| 删除需确认 | 任何环境的 DELETE 操作都需用户确认 |
-| 不暴露 Key | API Key 只从环境变量读取，不硬编码在命令中 |
-
+| 字段 | 作用 | 诊断价值 |
+|------|------|---------|
+| `loginAttempts` | 失败登录计数 | 高值说明曾被持续尝试 |
+| `lockUntil` | 锁定到期时间 | 非空说明账户当前锁定 |
+| `hash` / `salt` | pbkdf2-sha256 / 25000 轮 / 512B | 长度异常可能说明格式损坏 |
+| `apiKey` / `apiKeyIndex` / `enableAPIKey` | API Key 流程字段（HMAC + encrypt 钩子） | 不应被手工写入 |

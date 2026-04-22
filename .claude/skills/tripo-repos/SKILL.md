@@ -32,6 +32,23 @@ fe-tripo-homepage (官网) ──API调用──▶ tripo-cms (CMS后台) ──
 fe-tripo-studio (Studio) ─────┘ 依赖 auth/design/engine/utils
 ```
 
+## 认证操作规范（适用所有仓库）
+
+登录失败 / 凭证不对 / 权限不足时的标准动作：
+
+1. 停下，不做任何"绕过"尝试
+2. 向调用方报告：HTTP 状态 + 错误消息原文 + 所用账户 email（不贴密码 / token）
+3. 查下面各仓"认证与凭证"段拿合法凭证；信息不够则 AskUserQuestion
+4. 获得用户授权或合法凭证后再继续
+
+反模式（遇到即停下自查）：
+
+- 直接写数据库身份字段让自己"能登"
+- 伪造 token / cookie / API Key 绕过鉴权
+- 跨仓 `.env` 凑凭证、字典猜、git log 翻旧密码
+
+绕过会连锁——今天绕 localhost、明天绕 staging。合法通道写在各仓"认证与凭证"段；那里没写的是需要用户补齐的前置条件。
+
 ## tripo-cms
 
 - 管理 Posts（官网博客）和 GeoPosts（百万级 GEO/SEO 文章）
@@ -52,6 +69,30 @@ fe-tripo-studio (Studio) ─────┘ 依赖 auth/design/engine/utils
 
 - `workflow_dispatch` 手动触发，kubeconfig 区分集群（`ALI_STAGING_KUBECONFIG` / `ALI_PROD_KUBECONFIG`）
 - 镜像仓库：阿里云 ACR，部署后飞书通知（`foxundermoon/feishu-action@v2`）
+
+### 认证与凭证
+
+#### 认证机制
+
+**API 请求（自动化 / skill 调用）**
+- Payload CMS 内置 API Key（`Users.auth.useAPIKey: true`）
+- 请求头：`Authorization: users API-Key <key>`
+- 共享账户：`aibot@tripo3d.ai`（admin，staging + production）
+
+**Playwright UI 测试（交互式登录）**
+- 走 `/api/users/login` 完整流程，需明文 email + password
+- 测试专属账户（不借用 aibot、不借用真实业务用户）
+- production 不提供常驻 email / password；如需 UI 测试必须用户**单次明示授权**
+
+#### 凭证变量（仓库根 `.env`，已 gitignore）
+
+| 环境 | Base URL | API Key | Playwright Email | Playwright Password |
+|------|----------|---------|------------------|---------------------|
+| development | `http://localhost:3000` | `CMS_DEV_API_KEY` | `CMS_DEV_EMAIL` | `CMS_DEV_PASSWORD` |
+| staging | `https://cms-staging.itripo3d.com` | `CMS_STAGING_API_KEY` | `CMS_STAGING_EMAIL` | `CMS_STAGING_PASSWORD` |
+| production | `https://cms.itripo3d.com` | `CMS_PROD_API_KEY` | — | — |
+
+> development 环境的 `CMS_DEV_*` 变量由开发者自行注册本地 admin 账户后填入 `.env`；**不从其它仓库 `.env` 复制**（email 重合 ≠ 同一份口令）。
 
 ## fe-tripo-homepage
 

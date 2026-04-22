@@ -32,6 +32,7 @@ description: |
   - 返工时上一轮 worktree 可能还在，优先复用
 - **依赖**：`pnpm install`，确认 typecheck 基线干净（worktree 无 node_modules 时 TS 报错不可信）
 - **项目现状**：读 `llmdoc/index.md` + `llmdoc/overview/`，看要改动模块周围的代码怎么组织的。llmdoc 告诉你架构决策，现有代码告诉你落地模式
+- **认证与凭证**：涉及登录 / 受保护 API 调用 / playwright UI 测试时，查目标仓库在 `tripo-repos` 的"认证与凭证"段拿变量名、账户约定、UI 测试授权规则；缺则停下 AskUserQuestion。登录失败**禁止绕过**——见 `developer` / `tester` / `diagnose` agent "我不越的线"
 
 ## 先理解再编码
 
@@ -61,7 +62,7 @@ description: |
 
 ### 文档同步
 
-代码涉及架构变更、新目录结构、新组件模式、API 变更时，使用 `tr:recorder` agent 更新仓库的 llmdoc。llmdoc 是下次会话理解项目的入口——代码改了但文档没跟上，等于给未来的自己挖坑。
+代码涉及架构变更、新目录结构、新组件模式、API 变更时，使用 `llmdoc:recorder` agent 更新仓库的 llmdoc。llmdoc 是下次会话理解项目的入口——代码改了但文档没跟上，等于给未来的自己挖坑。
 
 ### 完成 Checklist
 
