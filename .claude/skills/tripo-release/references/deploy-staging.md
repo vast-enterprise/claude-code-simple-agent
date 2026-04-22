@@ -4,8 +4,8 @@
 
 ## 前置条件
 
-- PR 已合入 main
-- 本地 main 已 pull 到最新
+- PR 已合入目标分支（默认 main，或指定的测试分支）
+- 本地目标分支已 pull 到最新
 
 ## 步骤
 
@@ -16,7 +16,8 @@
 ### 2. 触发部署
 
 ```bash
-gh workflow run <staging-workflow> --repo <org/repo> --ref main
+# ⚠️ 必须与用户确认目标分支（如 main 或 feature 分支）
+gh workflow run <staging-workflow> --repo <org/repo> --ref <target-branch>
 ```
 
 ### 3. 等待部署完成
@@ -47,5 +48,5 @@ curl -sL -o /dev/null -w "%{http_code}" <staging-url>
 ```bash
 lark-cli im +messages-send --as bot \
   --user-id <open-id> \
-  --text '[Staging 已部署] <仓库名> main 分支已部署到 staging 环境'
+  --text '[Staging 已部署] <仓库名> <target-branch> 分支已部署到 staging 环境'
 ```

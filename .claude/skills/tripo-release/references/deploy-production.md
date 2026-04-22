@@ -4,7 +4,7 @@
 
 ## 前置条件
 
-- PR 已合入 main
+- PR 已合入目标分支（通常为 main）
 - 需求已准出、已搭上班车（由 tripo-requirement 步骤 10 或用户手动完成）
 - 发车中需求记录已存在
 
@@ -25,7 +25,7 @@
 # 检查是否已存在同名 tag
 git tag -l "v$(date +%Y.%m.%d)*"
 
-# 创建 tag（基于 main 最新 commit）
+# 创建 tag（基于目标分支最新 commit，确认部署分支）
 git tag v<YYYY.MM.DD>
 git push origin v<YYYY.MM.DD>
 
@@ -44,7 +44,8 @@ SSS 和 hotfix 每次独立创建。
 从 `tripo-repos` skill 获取 production GitHub Action 文件名：
 
 ```bash
-gh workflow run <production-workflow> --repo <org/repo> --ref main
+# ⚠️ 必须与用户确认目标分支（如 main，hotfix 分支等）
+gh workflow run <production-workflow> --repo <org/repo> --ref <target-branch>
 ```
 
 等待完成：

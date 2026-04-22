@@ -12,7 +12,8 @@
 
 2. **创建 PR**：
    ```bash
-   gh pr create --title "fix: <一句话描述>" --body "$(cat <<'EOF'
+   # ⚠️ 必须确认 PR 合入的目标分支（默认 main，或指定的测试分支），使用 --base 参数
+   gh pr create --base <target-branch> --title "fix: <一句话描述>" --body "$(cat <<'EOF'
    ## Bug
    <Bug 现象描述>
 

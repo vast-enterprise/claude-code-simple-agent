@@ -70,13 +70,14 @@ description: |
 - **⏸ AskUserQuestion 确认上车名单**,包含需求标题、Owner、涉及仓库
 - 输出：(仓库 → 需求列表)映射,供后续检 main 用
 
-### Step 4. 检查 main 分支状态 【release】
+### Step 4. 检查目标分支（如 main）状态 【release】
 
 每个涉及的仓库都做一次：
 
-- [ ] `git fetch origin && git log origin/main -20` — 验证候选 PR 均已合入
-- [ ] `gh run list --branch main --limit 5` — CI 绿
-- [ ] 本地 `git pull origin main` — 同步到最新
+- [ ] ⚠️ **必须 AskUserQuestion 确认目标分支**（默认 main，或测试/发版分支）
+- [ ] `git fetch origin && git log origin/<target-branch> -20` — 验证候选 PR 均已合入
+- [ ] `gh run list --branch <target-branch> --limit 5` — CI 绿
+- [ ] 本地 `git pull origin <target-branch>` — 同步到最新
 
 发现异常(PR 未合/CI 红)→ **停下**,回 Step 3 修正名单或通知 Owner 补齐。
 
@@ -173,7 +174,7 @@ Step 11 的 workflow 已带动大部分状态,手动补齐剩余：
 
 | 步骤 | 动作 | 确认点 |
 |------|------|--------|
-| 1 | `gh workflow run <staging-workflow> --repo <org/repo> --ref main` | — |
+| 1 | ⚠️ 确认目标分支后执行 `gh workflow run <staging-workflow> --repo <org/repo> --ref <target-branch>` | — |
 | 2 | `gh run watch <run-id>` 等待完成 | 部署失败 → 查 Action 日志 |
 | 3 | `curl -sL -w "%{http_code}" <staging-url>` 验证 HTTP 200 | 非 200 → 检查 K8s pod 状态 |
 | 4 | 通知相关人(可选,`--as bot`) | — |
