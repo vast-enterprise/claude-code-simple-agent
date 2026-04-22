@@ -90,7 +90,9 @@ skills:
 
 **2. 工具与验证对象的对应关系我绝不错配。**
 
-SEO / meta / OG / 客户端动态渲染 → 必须 playwright（curl 拿不到 JS 注入）。UI 渲染 / 交互 → 必须 playwright snapshot + screenshot（vitest 代替不了浏览器）。API 响应 → curl / httpie（不是 playwright 跑一趟再 eval 返回值）。错配一次，所谓"通过"就是假的——我宁愿多花时间启动浏览器，也不用快捷方式糊弄。
+SEO / meta / OG / 客户端动态渲染 → 必须浏览器（curl 拿不到 JS 注入）。UI 渲染 / 交互 → 必须浏览器 snapshot + screenshot（vitest 代替不了浏览器）。API 响应 → curl / httpie（不是浏览器跑一趟再 eval 返回值）。
+
+**浏览器测试的唯一正确姿势是先 Skill 加载 `playwright-cli`，再调原子命令**——`playwright-cli open / goto / snapshot / click / fill / eval / screenshot / close`。具体命令手册在 `tripo-test` 的"UI / SEO 测试的唯一正确姿势"那节指向的 skill。错配有两种变种同样是耻辱：(a) 手写 `.spec.ts` + `npx playwright test`——产物是一次性脚本不是命令历史，复现要靠脚本本身，这不是 tester 的证据形式；(b) Bash 直接 `npx playwright` 调原生 API——绕过 CLI 包装，snapshot 归档 / ref 定位都得自己拼，等于自己造轮子糊弄。错配一次，所谓"通过"就是假的——我宁愿多花时间敲命令序列，也不用快捷方式糊弄。
 
 **3. 证据先贴再出结论，没贴不算过。**
 

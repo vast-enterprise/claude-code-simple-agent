@@ -37,12 +37,37 @@ description: |
 | 验证对象 | 测试类型 | 工具 | 证据形式 |
 |---------|---------|------|---------|
 | HTTP 接口响应数据 | API 测试 | curl / httpie | 请求命令 + 响应 body |
-| 页面元素存在性、样式 | UI 渲染测试 | playwright snapshot + screenshot | snapshot 输出 + 截图 |
-| 操作后 UI 状态变化 | UI 交互测试 | playwright click/fill + screenshot | 操作前后截图对比 |
-| meta/OG/结构化数据 | SEO 测试 | playwright eval | eval 返回值 |
+| 页面元素存在性、样式 | UI 渲染测试 | **`playwright-cli` skill**（`snapshot` + `screenshot` 命令） | snapshot.yml + screenshot.png |
+| 操作后 UI 状态变化 | UI 交互测试 | **`playwright-cli` skill**（`click` / `fill` / `press` + 前后 `screenshot`） | 操作前后截图对比 + 命令序列 |
+| meta/OG/结构化数据 | SEO 测试 | **`playwright-cli` skill**（`eval` 命令） | eval 命令 + 返回值 |
 | 端到端数据流 | 跨仓库联调 | 组合以上 | 分层验证：API → SSR → 交互 → SEO，每层一份证据 |
 
 **关键判断**：SEO meta 标签可能在客户端 JS 执行后才注入，curl 只拿到 SSR HTML——必须用浏览器验证。
+
+## UI / SEO 测试的唯一正确姿势：用 playwright-cli skill 的原子命令
+
+**所有涉及浏览器的测试，第一步都是 Skill 加载 `playwright-cli`**，第二步按它的命令手册调用原子命令（`open` / `goto` / `snapshot` / `click` / `fill` / `eval` / `screenshot` / `close`）。不是"用 playwright"（模糊），是"用 playwright-cli 的原子命令序列"（精确）。
+
+**两种常见反模式都算错配**：
+
+| 反模式 | 为什么错 |
+|--------|---------|
+| 手写 `.spec.ts` 文件，`npx playwright test` 跑 | 产物是一次性脚本，不是可复现命令历史。tester 职责是交付证据，不是交付测试代码——spec 文件属于 developer 的单测范畴 |
+| Bash 直接 `npx playwright` 调原生 API / `page.click(...)` | 绕过 playwright-cli 包装层 = 绕过 snapshot.yml 自动存档、ref-based 元素定位、证据自动归档等内置能力，等于自己拼轮子 |
+
+**正确示范**：
+
+```bash
+# 先 Skill 加载 playwright-cli，再按手册调用
+playwright-cli open http://localhost:3000/blog/my-post
+playwright-cli snapshot --filename=tasks/<task-dir>/screenshots/01-initial.yml
+playwright-cli eval "document.querySelector('meta[property=\"og:title\"]').content"
+playwright-cli click e5          # e5 是 snapshot 里的元素 ref
+playwright-cli screenshot --filename=tasks/<task-dir>/screenshots/02-after-click.png
+playwright-cli close
+```
+
+每条命令 + 对应 snapshot / screenshot 文件路径就是证据——**别人拿着命令序列能重跑出一样的结果**，这才是"可复现"。手写脚本 + 截图只能证明"这次跑过了"，不能证明"方法可重复"。
 
 ## 证据标准
 
@@ -51,10 +76,10 @@ description: |
 | 有效证据 | 无效证据 |
 |---------|---------|
 | curl 请求 + 完整响应 | "我验证过了" |
-| playwright screenshot 截图 | "页面加载正常" |
-| playwright snapshot DOM 输出 | "功能工作" |
-| console 日志截取 | "没有报错" |
-| 测试命令 + 完整输出 | 对过程的文字描述 |
+| `playwright-cli screenshot` 产出的截图文件 | "页面加载正常" |
+| `playwright-cli snapshot` 产出的 DOM yml | "功能工作" |
+| `playwright-cli console` 日志 | "没有报错" |
+| CLI 命令序列 + 完整输出 | 对过程的文字描述 |
 
 ## 测试环境纪律
 
