@@ -194,3 +194,145 @@ def test_normal_message_uses_switched_default(mock_reply, mock_rich):
     dispatcher.dispatch.assert_called_once()
     call_args = dispatcher.dispatch.call_args[0]
     assert call_args[0] == "p2p_ou_123_cms"  # session_id
+
+
+# === /sessions ===
+
+
+@patch("src.router.resolve_rich_content", return_value=None)
+@patch("src.router.reply_message")
+def test_sessions_lists_user_sessions(mock_reply, mock_rich):
+    pool, dispatcher, defaults = _make_mocks()
+    pool.list_sessions = MagicMock(return_value={
+        "p2p_ou_123": {"created_at": "2026-04-23T09:00:00"},
+        "p2p_ou_123_cms": {"created_at": "2026-04-23T10:00:00"},
+        "p2p_ou_other": {"created_at": "2026-04-23T11:00:00"},  # 别人的
+    })
+    event = _make_event(content="/sessions")
+    run_async(route_message(pool, event, dispatcher, defaults))
+    mock_reply.assert_called_once()
+    text = mock_reply.call_args[0][1]
+    assert "原始会话" in text
+    assert "cms" in text
+    assert "ou_other" not in text  # 不应包含别人的会话
+
+
+@patch("src.router.resolve_rich_content", return_value=None)
+@patch("src.router.reply_message")
+def test_sessions_empty(mock_reply, mock_rich):
+    pool, dispatcher, defaults = _make_mocks()
+    event = _make_event(content="/sessions")
+    run_async(route_message(pool, event, dispatcher, defaults))
+    mock_reply.assert_called_once()
+    assert "没有" in mock_reply.call_args[0][1]
+
+
+# === /clear ===
+
+
+@patch("src.router.resolve_rich_content", return_value=None)
+@patch("src.router.reply_message")
+def test_clear_specific_suffix(mock_reply, mock_rich):
+    pool, dispatcher, defaults = _make_mocks()
+    pool.list_sessions = MagicMock(return_value={
+        "p2p_ou_123_cms": {"created_at": "2026-04-23T10:00:00"},
+    })
+    pool.remove = AsyncMock(return_value=True)
+    event = _make_event(content="/clear cms")
+    run_async(route_message(pool, event, dispatcher, defaults))
+    dispatcher.cancel_reader.assert_called_once_with("p2p_ou_123_cms")
+    pool.remove.assert_called_once_with("p2p_ou_123_cms")
+    assert "已清除" in mock_reply.call_args[0][1]
+
+
+@patch("src.router.resolve_rich_content", return_value=None)
+@patch("src.router.reply_message")
+def test_clear_nonexistent_session(mock_reply, mock_rich):
+    pool, dispatcher, defaults = _make_mocks()
+    event = _make_event(content="/clear 不存在")
+    run_async(route_message(pool, event, dispatcher, defaults))
+    pool.remove.assert_not_called()
+    assert "不存在" in mock_reply.call_args[0][1]
+
+
+@patch("src.router.resolve_rich_content", return_value=None)
+@patch("src.router.reply_message")
+def test_clear_resets_default_if_clearing_default(mock_reply, mock_rich):
+    pool, dispatcher, defaults = _make_mocks()
+    defaults.get_default = MagicMock(return_value="cms")
+    pool.list_sessions = MagicMock(return_value={
+        "p2p_ou_123_cms": {"created_at": "2026-04-23T10:00:00"},
+    })
+    pool.remove = AsyncMock(return_value=True)
+    event = _make_event(content="/clear cms")
+    run_async(route_message(pool, event, dispatcher, defaults))
+    defaults.set_default.assert_called_once_with("p2p_ou_123", None)
+
+
+# === /clear-all ===
+
+
+@patch("src.router.resolve_rich_content", return_value=None)
+@patch("src.router.reply_message")
+def test_clear_all_removes_all_user_sessions(mock_reply, mock_rich):
+    pool, dispatcher, defaults = _make_mocks()
+    pool.list_sessions = MagicMock(return_value={
+        "p2p_ou_123": {"created_at": "2026-04-23T09:00:00"},
+        "p2p_ou_123_cms": {"created_at": "2026-04-23T10:00:00"},
+        "p2p_ou_other": {"created_at": "2026-04-23T11:00:00"},
+    })
+    pool.remove = AsyncMock(return_value=True)
+    event = _make_event(content="/clear-all")
+    run_async(route_message(pool, event, dispatcher, defaults))
+    # 只清除 ou_123 的两个会话
+    assert pool.remove.call_count == 2
+    defaults.remove_user.assert_called_once_with("p2p_ou_123")
+    assert "2" in mock_reply.call_args[0][1]
+
+
+@patch("src.router.resolve_rich_content", return_value=None)
+@patch("src.router.reply_message")
+def test_clear_all_empty(mock_reply, mock_rich):
+    pool, dispatcher, defaults = _make_mocks()
+    event = _make_event(content="/clear-all")
+    run_async(route_message(pool, event, dispatcher, defaults))
+    pool.remove.assert_not_called()
+    assert "没有" in mock_reply.call_args[0][1]
+
+
+# === /interrupt ===
+
+
+@patch("src.router.resolve_rich_content", return_value=None)
+@patch("src.router.reply_message")
+def test_interrupt_active_session(mock_reply, mock_rich):
+    pool, dispatcher, defaults = _make_mocks()
+    mock_client = AsyncMock()
+    pool.get_client = MagicMock(return_value=mock_client)
+    event = _make_event(content="/interrupt cms")
+    run_async(route_message(pool, event, dispatcher, defaults))
+    mock_client.interrupt.assert_called_once()
+    assert "中断信号" in mock_reply.call_args[0][1]
+
+
+@patch("src.router.resolve_rich_content", return_value=None)
+@patch("src.router.reply_message")
+def test_interrupt_nonexistent_session(mock_reply, mock_rich):
+    pool, dispatcher, defaults = _make_mocks()
+    pool.get_client = MagicMock(return_value=None)
+    event = _make_event(content="/interrupt 不存在")
+    run_async(route_message(pool, event, dispatcher, defaults))
+    assert "不存在" in mock_reply.call_args[0][1]
+
+
+@patch("src.router.resolve_rich_content", return_value=None)
+@patch("src.router.reply_message")
+def test_interrupt_default_session(mock_reply, mock_rich):
+    pool, dispatcher, defaults = _make_mocks()
+    mock_client = AsyncMock()
+    pool.get_client = MagicMock(return_value=mock_client)
+    event = _make_event(content="/interrupt")
+    run_async(route_message(pool, event, dispatcher, defaults))
+    # 无 suffix → 中断 base session (p2p_ou_123)
+    pool.get_client.assert_called_once_with("p2p_ou_123")
+    mock_client.interrupt.assert_called_once()

@@ -80,7 +80,27 @@ async def route_message(
         await _handle_dollar_prefix(pool, event, dispatcher, base_session_id, content, metrics)
         return
 
-    # 4. 普通消息或其他 slash cmd → 默认 session
+    # 4. /sessions
+    if content == "/sessions":
+        await _handle_sessions_command(pool, event, defaults, base_session_id)
+        return
+
+    # 5. /clear {suffix?}
+    if content.startswith("/clear") and (len(content) == 6 or content[6] == " "):
+        await _handle_clear_command(pool, event, dispatcher, defaults, base_session_id, content)
+        return
+
+    # 6. /clear-all
+    if content == "/clear-all":
+        await _handle_clear_all_command(pool, event, dispatcher, defaults, base_session_id)
+        return
+
+    # 7. /interrupt {suffix?}
+    if content.startswith("/interrupt") and (len(content) == 10 or content[10] == " "):
+        await _handle_interrupt_command(pool, event, dispatcher, base_session_id, content)
+        return
+
+    # 8. 普通消息或其他 slash cmd → 默认 session
     default_suffix = defaults.get_default(base_session_id)
     target_session_id = _compute_full_session_id(base_session_id, default_suffix)
     await _dispatch_to_session(
@@ -163,3 +183,119 @@ async def _dispatch_to_session(pool, event, dispatcher, session_id, content, suf
             sid, pool, suffix=sfx, metrics=metrics
         ),
     )
+
+
+async def _handle_sessions_command(pool, event, defaults, base):
+    """处理 /sessions：列出当前用户的所有会话"""
+    all_sessions = pool.list_sessions()
+    user_sessions = [
+        (sid, data)
+        for sid, data in all_sessions.items()
+        if sid.startswith(base)
+    ]
+
+    if not user_sessions:
+        reply_message(event["message_id"], "当前没有活跃会话。")
+        return
+
+    # 按创建时间排序
+    user_sessions.sort(key=lambda x: x[1].get("created_at", ""))
+
+    lines = ["当前会话列表："]
+    default_suffix = defaults.get_default(base)
+
+    for sid, data in user_sessions:
+        suffix = _extract_suffix_from_session_id(sid, base)
+        label = suffix if suffix else "（原始会话）"
+        is_default = " [默认]" if suffix == default_suffix else ""
+        created = data.get("created_at", "未知")
+        lines.append(f"• {label}{is_default} - 创建于 {created}")
+
+    reply_message(event["message_id"], "\n".join(lines))
+
+
+async def _handle_clear_command(pool, event, dispatcher, defaults, base, content):
+    """处理 /clear {suffix?}：清除指定会话或当前默认会话"""
+    parts = content.split(None, 1)
+    suffix = parts[1] if len(parts) > 1 else None
+
+    # 如果没有指定 suffix，使用当前默认会话
+    if suffix is None:
+        suffix = defaults.get_default(base)
+
+    target_session_id = _compute_full_session_id(base, suffix)
+
+    # 检查会话是否存在
+    all_sessions = pool.list_sessions()
+    if target_session_id not in all_sessions:
+        label = suffix if suffix else "原始会话"
+        reply_message(event["message_id"], f"会话「{label}」不存在。")
+        return
+
+    # 取消 reader task
+    dispatcher.cancel_reader(target_session_id)
+
+    # 移除 client 和 store 记录
+    removed = await pool.remove(target_session_id)
+
+    # 如果清除的是当前默认会话，重置为 None
+    if suffix == defaults.get_default(base):
+        defaults.set_default(base, None)
+
+    label = suffix if suffix else "原始会话"
+    if removed:
+        reply_message(event["message_id"], f"已清除会话「{label}」。")
+    else:
+        reply_message(event["message_id"], f"清除会话「{label}」失败。")
+
+
+async def _handle_clear_all_command(pool, event, dispatcher, defaults, base):
+    """处理 /clear-all：清除当前用户的所有会话"""
+    all_sessions = pool.list_sessions()
+    user_sessions = [
+        sid for sid in all_sessions.keys()
+        if sid.startswith(base)
+    ]
+
+    if not user_sessions:
+        reply_message(event["message_id"], "当前没有活跃会话。")
+        return
+
+    # 取消所有 reader tasks
+    for sid in user_sessions:
+        dispatcher.cancel_reader(sid)
+
+    # 移除所有 sessions
+    removed_count = 0
+    for sid in user_sessions:
+        if await pool.remove(sid):
+            removed_count += 1
+
+    # 重置默认会话
+    defaults.remove_user(base)
+
+    reply_message(event["message_id"], f"已清除 {removed_count} 个会话。")
+
+
+async def _handle_interrupt_command(pool, event, dispatcher, base, content):
+    """处理 /interrupt {suffix?}：中断指定会话或当前默认会话的执行"""
+    parts = content.split(None, 1)
+    suffix = parts[1] if len(parts) > 1 else None
+
+    target_session_id = _compute_full_session_id(base, suffix)
+
+    # 检查会话是否存在
+    client = pool.get_client(target_session_id)
+    if client is None:
+        label = suffix if suffix else "原始会话"
+        reply_message(event["message_id"], f"会话「{label}」不存在或未激活。")
+        return
+
+    # 发送 interrupt
+    try:
+        await client.interrupt()
+        label = suffix if suffix else "原始会话"
+        reply_message(event["message_id"], f"已向会话「{label}」发送中断信号。")
+    except Exception as e:
+        log_error(f"interrupt {target_session_id} 失败: {e}")
+        reply_message(event["message_id"], "中断失败，请稍后重试。")
