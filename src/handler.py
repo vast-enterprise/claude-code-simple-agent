@@ -110,48 +110,18 @@ def _build_prompt(pool: ClientPool, event: dict, session_id: str, content: str) 
 
 
 async def send_message(
-    pool: ClientPool, event: dict, *, metrics: MetricsCollector | None = None
+    pool: ClientPool, event: dict, session_id: str, content: str,
+    *, metrics: MetricsCollector | None = None,
 ):
     """发送端：立即将消息推送给 Claude，不等响应。
 
-    处理 /clear 和 /interrupt 特殊指令。
+    session_id 和 content 由 router 计算后传入。
     普通消息和 slash commands 直接 query 推送，由 session_reader 异步处理响应。
     """
-    content = event.get("content", "").strip()
     message_id = event.get("message_id", "")
     sender_id = event.get("sender_id", "")
-    chat_type = event.get("chat_type", "p2p")
-
-    # 富消息解析：merge_forward / image / file 等非纯文本类型
-    rich = resolve_rich_content(event)
-    if rich is not None:
-        content = rich
 
     if not content or not message_id:
-        return
-
-    content = content.replace(BOT_MENTION, "").strip()
-    session_id = compute_session_id(event)
-
-    # /clear 自行处理（Claude Code 的 /clear 会被权限拦截）
-    if content.strip().lower() == "/clear":
-        removed = await pool.remove(session_id)
-        text = "已清除当前会话。下次发消息将开始新对话。" if removed else "当前没有活跃会话。"
-        reply_message(message_id, text)
-        return
-
-    # /interrupt 中断当前正在执行的任务
-    if content.strip().lower() == "/interrupt":
-        client = pool.get_client(session_id)
-        if client:
-            try:
-                await client.interrupt()
-                reply_message(message_id, "已中断当前任务。")
-            except Exception as e:
-                log_error(f"interrupt {session_id} 失败: {e}")
-                reply_message(message_id, f"中断失败：{e}")
-        else:
-            reply_message(message_id, "当前没有活跃任务。")
         return
 
     permissions.set_sender(sender_id)
@@ -185,7 +155,9 @@ async def send_message(
 
 
 async def session_reader(
-    session_id: str, pool: ClientPool, *, metrics: MetricsCollector | None = None
+    session_id: str, pool: ClientPool, *,
+    suffix: str | None = None,
+    metrics: MetricsCollector | None = None,
 ):
     """接收端：per-session 后台 reader，持续从 Claude 读取响应并回复飞书。
 
@@ -240,6 +212,8 @@ async def session_reader(
                         if reaction_id:
                             remove_reaction(mid, reaction_id)
                         for text in reply_texts:
+                            if suffix:
+                                text = f"来自 {suffix} 的回复：\n{text}"
                             reply_message(mid, text)
                         if metrics:
                             summary = reply_texts[0][:50] if reply_texts else ""

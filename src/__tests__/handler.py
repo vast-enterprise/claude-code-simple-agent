@@ -134,115 +134,43 @@ class TestBuildPrompt:
 
 
 class TestSendMessage:
-    """send_message 立即 query + 入队 FIFO"""
+    """send_message 接受 session_id + content，立即 query + 入队 FIFO"""
 
     @patch("src.handler.reply_message")
     def test_query_called_and_enqueued(self, mock_reply):
         pool, client = _make_mock_pool()
-
-        run_async(send_message(pool, _event()))
-
+        run_async(send_message(pool, _event(), "p2p_test", "hello"))
         client.query.assert_called_once()
         pool.enqueue_message.assert_called_once()
-        # 普通消息不直接 reply
         mock_reply.assert_not_called()
-
-    @patch("src.handler.reply_message")
-    def test_routes_to_correct_session(self, mock_reply):
-        pool, client = _make_mock_pool()
-
-        run_async(send_message(pool, _event(sender_id="ou_user_123")))
-
-        pool.get.assert_called_once_with("p2p_ou_user_123")
-        pool.enqueue_message.assert_called_once()
-        args = pool.enqueue_message.call_args[0]
-        assert args[0] == "p2p_ou_user_123"  # session_id
-        assert args[1] == "om_test"  # message_id
 
     @patch("src.handler.reply_message")
     def test_resumes_with_stored_session_id(self, mock_reply):
         pool, client = _make_mock_pool(claude_session_id="stored_123")
-
-        run_async(send_message(pool, _event()))
-
+        run_async(send_message(pool, _event(), "p2p_test", "hello"))
         _, kwargs = client.query.call_args
         assert kwargs["session_id"] == "stored_123"
 
     @patch("src.handler.reply_message")
     def test_slash_command_sent_raw(self, mock_reply):
         pool, client = _make_mock_pool()
-
-        run_async(send_message(pool, _event(content="/status")))
-
+        run_async(send_message(pool, _event(), "p2p_test", "/status"))
         prompt = client.query.call_args[0][0]
         assert prompt == "/status"
 
     @patch("src.handler.reply_message")
     def test_normal_message_has_prefix(self, mock_reply):
         pool, client = _make_mock_pool()
-
-        run_async(send_message(pool, _event(content="hello")))
-
+        run_async(send_message(pool, _event(), "p2p_test", "hello"))
         prompt = client.query.call_args[0][0]
         assert "所有者" in prompt
         assert "hello" in prompt
 
     @patch("src.handler.reply_message")
-    def test_cleans_at_mention(self, mock_reply):
-        pool, client = _make_mock_pool()
-
-        run_async(send_message(pool, _event(content=f"{BOT_MENTION} 帮我查一下", chat_type="group")))
-
-        prompt = client.query.call_args[0][0]
-        assert BOT_MENTION not in prompt
-        assert "帮我查一下" in prompt
-
-    @patch("src.handler.reply_message")
     def test_skips_empty_content(self, mock_reply):
         pool, _ = _make_mock_pool()
-        run_async(send_message(pool, _event(content="")))
+        run_async(send_message(pool, _event(), "p2p_test", ""))
         pool.get.assert_not_called()
-
-    @patch("src.handler.reply_message")
-    def test_clear_removes_session(self, mock_reply):
-        pool, _ = _make_mock_pool()
-
-        run_async(send_message(pool, _event(content="/clear")))
-
-        pool.remove.assert_called_once()
-        mock_reply.assert_called_once()
-        assert "已清除" in mock_reply.call_args[0][1]
-
-    @patch("src.handler.reply_message")
-    def test_interrupt_calls_client_interrupt(self, mock_reply):
-        pool, client = _make_mock_pool()
-        client.interrupt = AsyncMock()
-
-        run_async(send_message(pool, _event(content="/interrupt")))
-
-        client.interrupt.assert_called_once()
-        mock_reply.assert_called_once()
-        assert "已中断" in mock_reply.call_args[0][1]
-
-    @patch("src.handler.reply_message")
-    def test_interrupt_no_client(self, mock_reply):
-        pool, _ = _make_mock_pool()
-        pool.get_client = MagicMock(return_value=None)
-
-        run_async(send_message(pool, _event(content="/interrupt")))
-
-        mock_reply.assert_called_once()
-        assert "没有活跃任务" in mock_reply.call_args[0][1]
-
-    @patch("src.handler.reply_message")
-    def test_group_routes_correctly(self, mock_reply):
-        pool, client = _make_mock_pool()
-
-        event = _event(content=f"{BOT_MENTION} hello", chat_type="group")
-        event["chat_id"] = "oc_group_456"
-        run_async(send_message(pool, event))
-
-        pool.get.assert_called_once_with(f"group_oc_group_456_{OWNER_ID}")
 
 
 class TestSessionReader:
@@ -364,3 +292,34 @@ class TestSessionReader:
 
         mock_add.assert_not_called()
         mock_reply.assert_not_called()
+
+    @patch("src.handler.reply_message")
+    @patch("src.handler.remove_reaction")
+    @patch("src.handler.add_reaction", return_value="r_abc")
+    def test_reply_with_suffix_prefix(self, mock_add, mock_remove, mock_reply):
+        messages = [
+            AssistantMessage(content=[TextBlock(text="回复内容")], model="sonnet"),
+            ResultMessage(subtype="result", duration_ms=100, duration_api_ms=80,
+                          is_error=False, num_turns=1, session_id="x"),
+        ]
+        pending = {"message_id": "om_test", "content": "hello"}
+        pool = self._setup_reader(messages, pending)
+        run_async(session_reader("p2p_test_cms", pool, suffix="cms"))
+        mock_reply.assert_called_once()
+        reply_text = mock_reply.call_args[0][1]
+        assert reply_text.startswith("来自 cms 的回复：")
+        assert "回复内容" in reply_text
+
+    @patch("src.handler.reply_message")
+    @patch("src.handler.remove_reaction")
+    @patch("src.handler.add_reaction", return_value="r_abc")
+    def test_reply_without_suffix_no_prefix(self, mock_add, mock_remove, mock_reply):
+        messages = [
+            AssistantMessage(content=[TextBlock(text="回复内容")], model="sonnet"),
+            ResultMessage(subtype="result", duration_ms=100, duration_api_ms=80,
+                          is_error=False, num_turns=1, session_id="x"),
+        ]
+        pending = {"message_id": "om_test", "content": "hello"}
+        pool = self._setup_reader(messages, pending)
+        run_async(session_reader("p2p_test", pool, suffix=None))
+        mock_reply.assert_called_once_with("om_test", "回复内容")
