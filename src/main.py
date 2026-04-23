@@ -11,11 +11,12 @@ from claude_agent_sdk import ClaudeAgentOptions
 from claude_agent_sdk.types import SystemPromptPreset
 
 from src.config import ROOT, CONFIG, PERSONA, HEADLESS_RULES, DISALLOWED_TOOLS, MAX_ACTIVE_CLIENTS, log_debug, log_info
-from src.handler import should_respond, send_message, session_reader, compute_session_id
+from src.defaults_store import DefaultsStore
 from src.metrics import MetricsCollector
 from src.notify import notify_error
 from src.permissions import permission_gate
 from src.pool import ClientPool
+from src.router import route_message
 from src.server import start_server
 from src.session import SessionDispatcher
 from src.store import SessionStore
@@ -93,6 +94,7 @@ async def main():
     log_info("飞书事件监听已启动，等待消息...")
 
     store = SessionStore(ROOT / "data" / "sessions.json")
+    defaults = DefaultsStore(ROOT / "data" / "session_defaults.json")
     dispatcher = SessionDispatcher()
     pool = ClientPool(
         options,
@@ -123,16 +125,8 @@ async def main():
             except json.JSONDecodeError:
                 continue
 
-            if not should_respond(event):
-                continue
-
-            session_id = compute_session_id(event)
-            log_info(f"收到消息 [{session_id}]: {event.get('content', '')[:50]}...")
-            await dispatcher.dispatch(
-                session_id,
-                send_message(pool, event, metrics=metrics),
-                reader_factory=lambda sid=session_id: session_reader(sid, pool, metrics=metrics),
-            )
+            log_info(f"收到消息: {event.get('content', '')[:50]}...")
+            await route_message(pool, event, dispatcher, defaults, metrics=metrics)
 
     except KeyboardInterrupt:
         log_info("正在关闭...")
