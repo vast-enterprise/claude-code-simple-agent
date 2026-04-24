@@ -11,7 +11,7 @@
 
 核心产物 `tripo-avatar` 是一个 Python 异步服务，通过 `lark-cli` 订阅飞书消息事件，经过滤后交由 Claude Code SDK 处理，实现"数字分身"自动回复。架构为 query/response 解耦模型——发送端 (`send_message`) 收到飞书消息后立即将 prompt 写入 Claude stdin 并入队 FIFO，不等响应；接收端 (`session_reader`) 为 per-session 后台 reader task，持续读取 Claude 响应并通过 FIFO 匹配对应的飞书消息进行回复。`ClientPool` 为每个 session 惰性创建独立 `ClaudeSDKClient`（独立 Claude 子进程）并维护 per-session FIFO 消息队列，不同 session 完全并行。所有飞书交互通过 `lark-cli` subprocess 完成。
 
-系统内置可观测性体系：`SessionStore` 将 session 映射持久化到磁盘（原子写入），支持重启后 session resume（Pool 层通过 `--resume` 参数恢复 Claude 子进程上下文）；被清除的 session 自动归档到 `sessions_history.json`，保留元数据和 claude_session_id 以便后续通过历史记录页回溯完整对话内容；`MetricsCollector` 在内存中跟踪运行时指标和最近 200 条消息摘要；`aiohttp` HTTP API（端口 8420）暴露状态、session 管理端点、Dashboard、独立 Session 详情页（通过解析 Claude JSONL 日志展示完整对话时间线）和历史记录页（展示归档 session 列表，支持搜索和对话回溯）；`notify` 模块在进程崩溃或断连时推送飞书异常通知（60 秒同类防风暴）。飞书端保留 `/clear`（清除会话）和 `/interrupt`（中断当前任务，使用 SDK 控制协议）两个指令由 handler 自行处理，其他 slash commands（`/compact`、`/model` 等）直接透传给 Claude Code。
+系统内置可观测性体系：`SessionStore` 将 session 映射持久化到磁盘（原子写入），支持重启后 session resume（Pool 层通过 `--resume` 参数恢复 Claude 子进程上下文）；`DefaultsStore` 持久化用户指定的默认会话 suffix；被清除的 session 自动归档到 `sessions_history.json`，保留元数据和 claude_session_id 以便后续通过历史记录页回溯完整对话内容；`MetricsCollector` 在内存中跟踪运行时指标和最近 200 条消息摘要；`aiohttp` HTTP API（端口 8420）暴露状态、session 管理端点、Dashboard、独立 Session 详情页（通过解析 Claude JSONL 日志展示完整对话时间线）和历史记录页（展示归档 session 列表，支持搜索和对话回溯）；`notify` 模块在进程崩溃或断连时推送飞书异常通知（60 秒同类防风暴）。飞书端提供了多会话管理的指令支持：`/new` (创建)、`/switch` (切换)、`/sessions` (列表)、`/clear` (清除)、`/clear-all` (清空) 以及 `/interrupt` (中断)，这些指令以及普通的 slash commands 会由 `router` 层集中处理或透传给 Claude Code。
 
 ## 3. 技术栈
 
@@ -30,8 +30,10 @@
 tripo-work-center/
 ├── src/
 │   ├── main.py          # 入口：事件循环、进程管理、信号处理、崩溃通知、HTTP server 启动
-│   ├── pool.py          # ClientPool：per-session 独立 client 池 + per-session FIFO 消息队列 + SessionStore 集成 + session resume
-│   ├── handler.py       # 发送端 send_message（富消息解析 + prompt 构建 + 非阻塞 query）+ 接收端 session_reader（后台读响应）+ /clear /interrupt + 名字解析 + _build_prompt（角色·名字·ID·场景上下文）
+│   ├── router.py        # 命令路由层：处理 /new, /switch, $suffix 等多会话指令，分发到对应 session
+│   ├── pool.py          # ClientPool：per-session 独立 client 池 + FIFO 队列 + session resume
+│   ├── defaults_store.py# DefaultsStore：per-user 默认会话 suffix 持久化 (data/session_defaults.json)
+│   ├── handler.py       # 执行层：send_message（prompt 构建 + 非阻塞 query）+ session_reader（读响应）+ 名字解析
 │   ├── session.py       # 调度器（SessionDispatcher）：直推 send_coro + per-session reader task 管理
 │   ├── permissions.py   # 工具调用权限门控（permission_gate），contextvars 隔离
 │   ├── lark.py          # 飞书交互封装（reaction、reply、用户名/群名解析、富消息解析）
@@ -55,13 +57,20 @@ tripo-work-center/
 ```
 main.py ──→ config.py（CONFIG, PERSONA, ROOT, HEADLESS_RULES, DISALLOWED_TOOLS）
    │──→ pool.py（ClientPool）
-   │──→ handler.py（should_respond, send_message, session_reader, compute_session_id）
+   │──→ router.py（route_message）
+   │──→ defaults_store.py（DefaultsStore）
    │──→ permissions.py（permission_gate）
    │──→ session.py（SessionDispatcher）
    │──→ notify.py（notify_error — 崩溃通知 + 断连通知）
    │──→ metrics.py（MetricsCollector）
    │──→ store.py（SessionStore）
    │──→ server.py（start_server — HTTP API + Dashboard）
+   │
+router.py ──→ handler.py（should_respond, compute_session_id, send_message, session_reader）
+   │──→ lark.py（reply_message, resolve_rich_content）
+   │──→ pool.py（ClientPool — list_sessions, remove, get_client）
+   │──→ session.py（SessionDispatcher — dispatch, cancel_reader）
+   │──→ defaults_store.py（DefaultsStore — get_default, set_default, remove_user）
    │
 pool.py ──→ config.py（log_debug, log_error）
    │──→ store.py（SessionStore — 持久化 session 映射 + Claude session_id）
@@ -73,6 +82,7 @@ handler.py ──→ config.py（OWNER_ID, BOT_NAME, log_debug, log_error）
    │──→ permissions（set_sender）
    │──→ metrics.py（MetricsCollector — record_message）
    │
+defaults_store.py ──→ config.py（log_error）
 server.py ──→ config.py（log_info）
    │──→ aiohttp（web.Application, AppRunner, TCPSite）
    │
@@ -87,6 +97,6 @@ config.py ──→ 无内部依赖（叶节点）
 
 ## 6. 数据流概要
 
-`lark-cli stdout (NDJSON)` → `main.py` 逐行读取解析（`_read_or_shutdown` 多路复用）→ `should_respond` 过滤 → `compute_session_id` 计算会话标识 → `SessionDispatcher.dispatch(session_id, send_coro, reader_factory)` 分发。**发送端** `send_message`：`/clear` 自行处理，`/interrupt` 调用 SDK 控制协议中断任务，其他消息 `client.query()` 写 stdin + `pool.enqueue_message()` 入队 FIFO，立即返回不等响应。**接收端** `session_reader`：per-session 后台 reader task（首次消息时启动），持续 `receive_response()` 读取 Claude 响应 → `peek_pending()` 从 FIFO 队头获取对应飞书 message_id → 管理 reaction 生命周期 → `reply_message()` 回复 → `dequeue_message()` 弹出 → `metrics.record_message()` 记录。
+`lark-cli stdout (NDJSON)` → `main.py` 逐行读取解析（`_read_or_shutdown` 多路复用）→ 调用 `router.route_message` 进行命令路由。**路由层** `router.py` 处理多会话指令（`/new`、`/switch`、`/sessions` 等），识别 `$suffix` 前缀并解析富消息，最终通过 `SessionDispatcher.dispatch` 分发到对应的 session_id。**发送端** `send_message`：只负责拼接上下文 prompt、执行 `client.query()` 写入 stdin 和 `pool.enqueue_message()` 入队 FIFO，立即返回不等响应。**接收端** `session_reader`：per-session 后台 reader task（首次消息时启动），持续 `receive_response()` 读取 Claude 响应 → `peek_pending()` 从 FIFO 队头获取对应飞书 message_id → 管理 reaction 生命周期 → （如果是 suffix 会话则附加来源前缀）`reply_message()` 回复 → `dequeue_message()` 弹出 → `metrics.record_message()` 记录。
 
 并行运行：`aiohttp` HTTP server（端口 8420）提供 REST 端点、Dashboard UI、Session 详情页和 Conversation API（解析 Claude JSONL 日志）；`notify` 在崩溃/断连时推送飞书通知。
