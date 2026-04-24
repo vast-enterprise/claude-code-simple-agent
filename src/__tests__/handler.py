@@ -172,6 +172,60 @@ class TestSendMessage:
         run_async(send_message(pool, _event(), "p2p_test", ""))
         pool.get.assert_not_called()
 
+    @patch("src.handler.reply_message")
+    def test_sets_processing_true_after_successful_query(self, mock_reply):
+        """成功 query 后 pool.set_processing(session_id, True) 被调用一次。"""
+        pool, client = _make_mock_pool()
+
+        run_async(send_message(pool, _event(sender_id="ou_proc_user"), "p2p_ou_proc_user", "hello"))
+
+        pool.set_processing.assert_called_once_with("p2p_ou_proc_user", True)
+
+    @patch("src.handler.reply_message")
+    def test_set_processing_called_after_query_and_before_enqueue(self, mock_reply):
+        """调用顺序：client.query -> pool.set_processing -> pool.enqueue_message。"""
+        pool, client = _make_mock_pool()
+
+        # 用 parent mock 统一捕获所有相关调用顺序
+        parent = MagicMock()
+        parent.attach_mock(client.query, "query")
+        parent.attach_mock(pool.set_processing, "set_processing")
+        parent.attach_mock(pool.enqueue_message, "enqueue_message")
+
+        run_async(send_message(pool, _event(), "p2p_test", "hello"))
+
+        names = [call[0] for call in parent.mock_calls]
+        assert "query" in names
+        assert "set_processing" in names
+        assert "enqueue_message" in names
+        # query 必须先于 set_processing，set_processing 必须先于 enqueue_message
+        assert names.index("query") < names.index("set_processing")
+        assert names.index("set_processing") < names.index("enqueue_message")
+
+    @patch("src.handler.reply_message")
+    def test_set_processing_not_called_when_query_raises(self, mock_reply):
+        """client.query 抛异常时，set_processing 不应被调用。"""
+        pool, client = _make_mock_pool()
+        client.query = AsyncMock(side_effect=RuntimeError("boom"))
+
+        run_async(send_message(pool, _event(), "p2p_test", "hello"))
+
+        pool.set_processing.assert_not_called()
+        pool.enqueue_message.assert_not_called()
+        # 走的是 except 分支：回复了错误提示
+        mock_reply.assert_called_once()
+
+    @patch("src.handler.reply_message")
+    def test_set_processing_not_called_when_pool_get_raises(self, mock_reply):
+        """pool.get 抛异常时，set_processing 不应被调用。"""
+        pool, client = _make_mock_pool()
+        pool.get = AsyncMock(side_effect=RuntimeError("pool exhausted"))
+
+        run_async(send_message(pool, _event(), "p2p_test", "hello"))
+
+        pool.set_processing.assert_not_called()
+        pool.enqueue_message.assert_not_called()
+        mock_reply.assert_called_once()
 
 class TestSessionReader:
     """session_reader 后台持续读取 response 并回复飞书"""

@@ -144,6 +144,11 @@ async def send_message(
         log_debug(f"[{session_id}] query: resume={claude_sid!r} pending_before={pool.pending_count(session_id)}")
         await client.query(prompt, session_id=claude_sid)
 
+        # query 成功写入 stdin 后，session 进入 PROCESSING 状态——
+        # 等待 session_reader 读到对应的 ResultMessage 才会翻回 READY。
+        # 放在 query 之后、enqueue 之前：query 抛异常时不会留下 stuck True。
+        pool.set_processing(session_id, True)
+
         # 入队 FIFO，reader task 据此匹配 response → 飞书回复
         pool.enqueue_message(session_id, message_id, content)
         log_debug(f"[{session_id}] query 已发送: {content[:50]}")
