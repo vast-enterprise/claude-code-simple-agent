@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from src.pool import ClientPool
+from src.pool import ClientPool, SessionStatus
 
 
 def run_async(coro):
@@ -567,3 +567,119 @@ class TestPoolEviction:
         """不传 max_active_clients 时默认 5"""
         pool = ClientPool(MagicMock())
         assert pool.max_active_clients == 5
+
+
+class TestSessionStatus:
+    """SessionStatus 状态机测试：CREATED / READY / PROCESSING / NONE"""
+
+    def _make_store(self, sessions: dict | None = None):
+        store = MagicMock()
+        store.load_all = MagicMock(return_value=sessions or {})
+        store.save = MagicMock()
+        store.update_active = MagicMock()
+        store.remove = MagicMock(return_value=True)
+        store.archive = MagicMock(return_value=True)
+        return store
+
+    def test_status_none_when_session_does_not_exist(self):
+        """session 不在 store 也不在 _clients → NONE"""
+        store = self._make_store()
+        pool = ClientPool(MagicMock(), store=store)
+        assert pool.get_status("p2p_ou_x_REQ-1") == SessionStatus.NONE
+
+    def test_status_created_when_in_store_but_no_client(self):
+        """session 在 store 但不在 _clients → CREATED"""
+        store = self._make_store({"p2p_ou_x_REQ-1": {"last_active": "T1"}})
+        pool = ClientPool(MagicMock(), store=store)
+        assert pool.get_status("p2p_ou_x_REQ-1") == SessionStatus.CREATED
+
+    @patch("src.pool.ClaudeSDKClient")
+    def test_status_ready_when_client_exists_and_idle(self, MockClient):
+        """session 在 _clients 且 _processing[sid]=False → READY"""
+        mock_client = MagicMock()
+        mock_client.connect = AsyncMock()
+        MockClient.return_value = mock_client
+        store = self._make_store()
+        pool = ClientPool(MagicMock(), store=store)
+
+        async def run():
+            await pool.get("p2p_ou_x_REQ-1")
+            assert pool.get_status("p2p_ou_x_REQ-1") == SessionStatus.READY
+
+        run_async(run())
+
+    @patch("src.pool.ClaudeSDKClient")
+    def test_status_processing_after_set_processing_true(self, MockClient):
+        """set_processing(sid, True) 后 → PROCESSING"""
+        mock_client = MagicMock()
+        mock_client.connect = AsyncMock()
+        MockClient.return_value = mock_client
+        store = self._make_store()
+        pool = ClientPool(MagicMock(), store=store)
+
+        async def run():
+            await pool.get("p2p_ou_x_REQ-1")
+            pool.set_processing("p2p_ou_x_REQ-1", True)
+            assert pool.get_status("p2p_ou_x_REQ-1") == SessionStatus.PROCESSING
+
+            pool.set_processing("p2p_ou_x_REQ-1", False)
+            assert pool.get_status("p2p_ou_x_REQ-1") == SessionStatus.READY
+
+        run_async(run())
+
+    @patch("src.pool.ClaudeSDKClient")
+    def test_remove_clears_processing_flag(self, MockClient):
+        """pool.remove() 后 _processing 被清除（避免状态残留）"""
+        mock_client = MagicMock()
+        mock_client.connect = AsyncMock()
+        mock_client.disconnect = AsyncMock()
+        MockClient.return_value = mock_client
+        store = self._make_store()
+        pool = ClientPool(MagicMock(), store=store)
+
+        async def run():
+            await pool.get("p2p_ou_x_REQ-1")
+            pool.set_processing("p2p_ou_x_REQ-1", True)
+            await pool.remove("p2p_ou_x_REQ-1")
+            # remove 后 session 不在 _clients 也不在 store（store.remove 返回 True）→ NONE
+            # 更关键的是 _processing 也清了
+            assert "p2p_ou_x_REQ-1" not in pool._processing
+
+        run_async(run())
+
+    @patch("src.pool.ClaudeSDKClient")
+    def test_eviction_clears_processing_flag(self, MockClient):
+        """LRU eviction 后 _processing 被清除"""
+        def make_client(**kwargs):
+            m = MagicMock()
+            m.connect = AsyncMock()
+            m.disconnect = AsyncMock()
+            return m
+        MockClient.side_effect = make_client
+
+        store = self._make_store({
+            "s1": {"last_active": "2026-04-16T01:00:00+00:00"},
+            "s2": {"last_active": "2026-04-16T03:00:00+00:00"},
+        })
+        dispatcher = MagicMock()
+        dispatcher.cancel_reader = MagicMock()
+        pool = ClientPool(MagicMock(), store=store, max_active_clients=2, dispatcher=dispatcher)
+
+        async def run():
+            await pool.get("s1")
+            await pool.get("s2")
+            pool.set_processing("s1", False)  # s1 可被回收
+            # 触发回收 s1
+            await pool.get("s3")
+            assert "s1" not in pool._processing
+
+        run_async(run())
+
+    def test_set_processing_on_unknown_session_is_noop_safe(self):
+        """对未建 client 的 session 调 set_processing 不报错，
+        但 get_status 仍依据 _clients 存在与否判断状态"""
+        store = self._make_store({"s1": {}})
+        pool = ClientPool(MagicMock(), store=store)
+        pool.set_processing("s1", True)
+        # s1 只在 store 没 client → 仍是 CREATED
+        assert pool.get_status("s1") == SessionStatus.CREATED

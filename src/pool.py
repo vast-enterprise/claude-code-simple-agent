@@ -18,6 +18,21 @@ if TYPE_CHECKING:
     from src.store import SessionStore
 
 
+class SessionStatus:
+    """Session 状态枚举。
+
+    - NONE:       session 完全不存在（store 和 _clients 都没有）
+    - CREATED:    session 在 store 有元数据，但尚无 SDK client（重启后未 reconnect 的场景）
+    - READY:      有 SDK client，空闲可接消息
+    - PROCESSING: 正在执行（已发 query，等 ResultMessage）
+    """
+
+    NONE = "NONE"
+    CREATED = "CREATED"
+    READY = "READY"
+    PROCESSING = "PROCESSING"
+
+
 class ClientPool:
     """管理 per-session 的 ClaudeSDKClient 实例。
 
@@ -45,6 +60,7 @@ class ClientPool:
         self._clients: dict[str, ClaudeSDKClient] = {}
         self._locks: dict[str, asyncio.Lock] = {}
         self._pending: dict[str, collections.deque] = {}
+        self._processing: dict[str, bool] = {}
 
     async def get(self, session_id: str) -> ClaudeSDKClient:
         """获取指定 session 的 client，不存在则创建并 connect"""
@@ -115,6 +131,7 @@ class ClientPool:
 
         self._locks.pop(session_id, None)
         self._pending.pop(session_id, None)
+        self._processing.pop(session_id, None)
         return removed
 
     def list_sessions(self) -> dict:
@@ -140,6 +157,28 @@ class ClientPool:
         if self._store:
             return set(self._store.load_all().keys())
         return set()
+
+    # ── Session 状态机 ──
+
+    def get_status(self, session_id: str) -> str:
+        """返回 session 的当前状态。见 SessionStatus。"""
+        if session_id in self._clients:
+            if self._processing.get(session_id, False):
+                return SessionStatus.PROCESSING
+            return SessionStatus.READY
+        if session_id in self.session_ids():
+            return SessionStatus.CREATED
+        return SessionStatus.NONE
+
+    def set_processing(self, session_id: str, is_processing: bool) -> None:
+        """切换 session 的 PROCESSING/READY 标记。
+
+        由 handler 在 query 前后调用：query 后 → True；
+        收到 ResultMessage 或异常 → False。
+        对未建 client 的 session 也允许设置（不会直接影响 get_status——
+        CREATED 状态仍以 _clients 缺失为准）。
+        """
+        self._processing[session_id] = is_processing
 
     # ── per-session 消息 FIFO ──
 
@@ -181,6 +220,7 @@ class ClientPool:
         pending_count = len(pending) if pending else 0
         if pending_count > 0:
             log_error(f"[Eviction] 丢弃 {session_id} 的 {pending_count} 条待处理消息")
+        self._processing.pop(session_id, None)
         log_debug(f"[Eviction] session={session_id} evicted (pending_dropped={pending_count})")
         return session_id
 
@@ -242,3 +282,4 @@ class ClientPool:
         self._clients.clear()
         self._locks.clear()
         self._pending.clear()
+        self._processing.clear()
