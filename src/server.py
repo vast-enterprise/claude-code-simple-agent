@@ -7,8 +7,9 @@ from pathlib import Path
 
 from aiohttp import web
 
-from src.config import ROOT, log_info
+from src.config import OWNER_ID, ROOT, log_info
 from src.handler import send_message, session_reader
+from src.pool import SessionStatus
 
 # suffix 白名单：避免与飞书侧 /new {suffix} / $suffix 解析冲突（空格、换行、$、/ 等）
 _SUFFIX_PATTERN = re.compile(r"[A-Za-z0-9_\-\.]+")
@@ -444,6 +445,103 @@ async def _handle_create_session(request):
     })
 
 
+async def _handle_send_message(request):
+    """POST /sessions/{session_id}/message — 向已存在的 session 追加一条消息。
+
+    与 `_handle_create_session` 互补：create 新建 session 并发首条消息（写 task 元数据）；
+    send_message 复用已存在 session，不写元数据、不触发 409-for-exists 检查。
+
+    Request body 字段：
+    - message (str, required, non-empty) — 消息内容
+    - suffix (str, optional) — 回复前缀（`来自 {suffix} 的回复：\\n`）。
+      不传则无前缀——但对 control-plane 场景（internal-* message_id）而言，
+      reader 的 lark 侧副作用被 handler 层 _is_internal_message 屏蔽，所以
+      prefix 实际不生效，此参数主要用于保持与 create 端点的对称性。
+
+    响应：
+    - 200: {"status": "PROCESSING", "queued": true}
+    - 400: body 非 dict / 缺 message / message 非 str / message 为空
+    - 404: session_id 不在 pool.list_sessions()（调用方应改用 /create）
+    - 409: pool.get_status(session_id) == PROCESSING（调用方应等待或使用 /interrupt）
+    - 503: dispatcher 未注入
+
+    虚拟事件的 sender_id 使用 src.config.OWNER_ID——因为控制平面只由 owner 的
+    主 Claude agent 调用。sender_id 被 handler._build_prompt 用于选择角色（所有者/同事）
+    但控制平面 message_id 形如 "internal-<uuid>"，reader 侧 lark 调用被整体跳过，
+    所以 sender_id 对 lark 反馈无影响，只影响 Claude 看到的 prompt 前缀。
+
+    注意事项（TOCTOU）：
+    - 404 检查（list_sessions 查询）与后续 dispatch 非原子；同一瞬间 pool.remove()
+      可能将 session 搬走，dispatch 会在空壳 session 上新建 client（等同于 create）。
+    - 409 检查与后续 dispatch 同样非原子；set_processing 由 handler.send_message
+      负责写入，两次连续 send_message 之间存在短暂窗口可能都通过 409 检查。
+      调用方应在其侧串行化同一 session 的请求。
+    """
+    session_id = request.match_info["session_id"]
+    pool = request.app["pool"]
+    metrics = request.app["metrics"]
+    dispatcher = request.app.get("dispatcher")
+
+    # 503: dispatcher 未注入
+    if dispatcher is None:
+        return _json({"error": "dispatcher unavailable"}, status=503)
+
+    # 400: body 解析
+    try:
+        body = await request.json()
+    except (json.JSONDecodeError, ValueError):
+        return _json({"error": "invalid json body"}, status=400)
+
+    if not isinstance(body, dict):
+        return _json({"error": "body must be a json object"}, status=400)
+
+    message = body.get("message")
+    suffix = body.get("suffix")
+
+    # 400: message 必填 str 且非空
+    if not isinstance(message, str) or not message.strip():
+        return _json({"error": "message required (non-empty string)"}, status=400)
+
+    # 400: suffix 可选但须为 str
+    if suffix is not None and not isinstance(suffix, str):
+        return _json({"error": "suffix must be a string"}, status=400)
+
+    # 404: session 不存在（经 pool.list_sessions() 公共 API 查）
+    existing = pool.list_sessions()
+    if session_id not in existing:
+        return _json(
+            {"error": "session not found", "session_id": session_id},
+            status=404,
+        )
+
+    # 409: session 正在处理
+    if pool.get_status(session_id) == SessionStatus.PROCESSING:
+        return _json(
+            {"error": "session is processing", "session_id": session_id},
+            status=409,
+        )
+
+    # 构造虚拟事件，镜像 create 端点
+    event = {
+        "chat_type": "p2p",
+        "sender_id": OWNER_ID,
+        "sender_type": "user",  # 防御性：避免 should_respond 过滤
+        "message_id": f"internal-{uuid.uuid4()}",
+        "content": message,
+        "chat_id": OWNER_ID,
+    }
+
+    await dispatcher.dispatch(
+        session_id,
+        send_message(pool, event, session_id, message, metrics=metrics),
+        reader_factory=lambda sid=session_id, sfx=suffix: session_reader(
+            sid, pool, suffix=sfx, metrics=metrics
+        ),
+    )
+
+    return _json({"status": SessionStatus.PROCESSING, "queued": True})
+
+
 async def _handle_history_page(request):
     """返回历史记录页 HTML"""
     if not _HISTORY_PAGE_PATH.exists():
@@ -476,6 +574,7 @@ def _create_app(pool, metrics, *, dispatcher=None) -> web.Application:
     # 调度控制面：/sessions/{owner_id}/* 挂在根路径下，与 /api/* 分开
     app.router.add_get("/sessions/{owner_id}", _handle_sessions_by_owner)
     app.router.add_post("/sessions/{owner_id}/create", _handle_create_session)
+    app.router.add_post("/sessions/{session_id}/message", _handle_send_message)
 
     return app
 

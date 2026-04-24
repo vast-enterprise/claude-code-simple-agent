@@ -364,3 +364,189 @@ class TestCreateSessionNoDispatcher(AioHTTPTestCase):
         assert resp.status == 503
         data = await resp.json()
         assert "dispatcher" in data.get("error", "").lower()
+
+
+class TestSendMessage(AioHTTPTestCase):
+    """POST /sessions/{session_id}/message — 向已存在的 session 追加消息"""
+
+    async def get_application(self):
+        self.mock_pool = MagicMock()
+        # 默认 session 存在，状态 READY（可接收消息）
+        self.mock_pool.list_sessions.return_value = {
+            "p2p_ou_test_REQ-12345": {"task_id": "REQ-12345", "task_type": "requirement"},
+        }
+        self.mock_pool.get_status = MagicMock(return_value="READY")
+        self.mock_pool.pending_count = MagicMock(return_value=0)
+        self.mock_pool.active_client_count.return_value = 0
+        self.mock_pool.max_active_clients = 5
+        self.mock_pool._store = MagicMock()
+        self.mock_pool._store.load_all = MagicMock(return_value={})
+
+        self.metrics = MetricsCollector()
+
+        self.mock_dispatcher = MagicMock()
+        self.mock_dispatcher.dispatch = AsyncMock()
+
+        return _create_app(self.mock_pool, self.metrics, dispatcher=self.mock_dispatcher)
+
+    @unittest_run_loop
+    async def test_happy_path_dispatches(self):
+        """session 存在 + READY → 200，dispatcher.dispatch 被 await 一次"""
+        body = {"message": "继续推进需求 REQ-12345", "suffix": "REQ-12345"}
+        resp = await self.client.post(
+            "/sessions/p2p_ou_test_REQ-12345/message", json=body
+        )
+        assert resp.status == 200
+        data = await resp.json()
+        assert data.get("status") == "PROCESSING"
+        assert data.get("queued") is True
+
+        # dispatcher.dispatch 被调用一次，session_id 匹配
+        assert self.mock_dispatcher.dispatch.await_count == 1
+        call_args = self.mock_dispatcher.dispatch.await_args
+        assert call_args.args[0] == "p2p_ou_test_REQ-12345"
+        # 第二个位置参数是 send_message 协程
+        import inspect
+        assert inspect.iscoroutine(call_args.args[1])
+        # reader_factory 以 kw 传入
+        rf = call_args.kwargs.get("reader_factory")
+        assert callable(rf)
+
+    @unittest_run_loop
+    async def test_session_not_found_404(self):
+        """session 不在 pool.list_sessions() → 404，不调用 dispatcher"""
+        self.mock_pool.list_sessions.return_value = {}  # 空
+        body = {"message": "hi"}
+        resp = await self.client.post(
+            "/sessions/p2p_ou_test_REQ-NOEXIST/message", json=body
+        )
+        assert resp.status == 404
+        data = await resp.json()
+        assert data.get("session_id") == "p2p_ou_test_REQ-NOEXIST"
+        assert "not found" in data.get("error", "").lower()
+        # dispatcher 不应被调用
+        assert self.mock_dispatcher.dispatch.await_count == 0
+
+    @unittest_run_loop
+    async def test_session_processing_409(self):
+        """session 当前 PROCESSING → 409，不调用 dispatcher"""
+        self.mock_pool.get_status = MagicMock(return_value="PROCESSING")
+        body = {"message": "hi"}
+        resp = await self.client.post(
+            "/sessions/p2p_ou_test_REQ-12345/message", json=body
+        )
+        assert resp.status == 409
+        data = await resp.json()
+        assert data.get("session_id") == "p2p_ou_test_REQ-12345"
+        assert "processing" in data.get("error", "").lower()
+        assert self.mock_dispatcher.dispatch.await_count == 0
+
+    @unittest_run_loop
+    async def test_missing_message_400(self):
+        """body 缺 message 字段 → 400"""
+        body = {"suffix": "REQ-12345"}
+        resp = await self.client.post(
+            "/sessions/p2p_ou_test_REQ-12345/message", json=body
+        )
+        assert resp.status == 400
+        data = await resp.json()
+        assert "error" in data
+        assert self.mock_dispatcher.dispatch.await_count == 0
+
+    @unittest_run_loop
+    async def test_empty_message_400(self):
+        """message 为空字符串 → 400"""
+        body = {"message": ""}
+        resp = await self.client.post(
+            "/sessions/p2p_ou_test_REQ-12345/message", json=body
+        )
+        assert resp.status == 400
+        data = await resp.json()
+        assert "error" in data
+        assert self.mock_dispatcher.dispatch.await_count == 0
+
+    @unittest_run_loop
+    async def test_non_string_message_400(self):
+        """message 非字符串（传 int）→ 400"""
+        body = {"message": 123}
+        resp = await self.client.post(
+            "/sessions/p2p_ou_test_REQ-12345/message", json=body
+        )
+        assert resp.status == 400
+        data = await resp.json()
+        assert "error" in data
+        assert self.mock_dispatcher.dispatch.await_count == 0
+
+    @unittest_run_loop
+    async def test_suffix_passed_to_reader_factory(self):
+        """suffix 应透传到 session_reader（通过 patch handler.session_reader 断言）"""
+        from unittest.mock import patch
+
+        with patch("src.server.session_reader") as mock_reader:
+            # session_reader 被调用后应返回一个 coroutine-like 对象（或 MagicMock）
+            mock_reader.return_value = MagicMock()
+            body = {"message": "hi there", "suffix": "REQ-12345"}
+            resp = await self.client.post(
+                "/sessions/p2p_ou_test_REQ-12345/message", json=body
+            )
+            assert resp.status == 200
+
+            # 调用 reader_factory，触发 session_reader(...)
+            call_args = self.mock_dispatcher.dispatch.await_args
+            rf = call_args.kwargs.get("reader_factory")
+            assert callable(rf)
+            rf()
+
+            # session_reader 被调用，suffix 参数是 "REQ-12345"
+            assert mock_reader.called
+            _, kwargs = mock_reader.call_args
+            assert kwargs.get("suffix") == "REQ-12345"
+
+    @unittest_run_loop
+    async def test_suffix_omitted_defaults_to_none(self):
+        """body 不带 suffix → session_reader 的 suffix 为 None"""
+        from unittest.mock import patch
+
+        with patch("src.server.session_reader") as mock_reader:
+            mock_reader.return_value = MagicMock()
+            body = {"message": "hi"}
+            resp = await self.client.post(
+                "/sessions/p2p_ou_test_REQ-12345/message", json=body
+            )
+            assert resp.status == 200
+
+            call_args = self.mock_dispatcher.dispatch.await_args
+            rf = call_args.kwargs.get("reader_factory")
+            rf()
+
+            assert mock_reader.called
+            _, kwargs = mock_reader.call_args
+            assert kwargs.get("suffix") is None
+
+
+class TestSendMessageNoDispatcher(AioHTTPTestCase):
+    """dispatcher 未注入时 → 503"""
+
+    async def get_application(self):
+        self.mock_pool = MagicMock()
+        self.mock_pool.list_sessions.return_value = {
+            "p2p_ou_test_REQ-12345": {"task_id": "REQ-12345"},
+        }
+        self.mock_pool.get_status = MagicMock(return_value="READY")
+        self.mock_pool.active_client_count.return_value = 0
+        self.mock_pool.max_active_clients = 5
+        self.mock_pool._store = MagicMock()
+
+        self.metrics = MetricsCollector()
+        # 不传 dispatcher
+        return _create_app(self.mock_pool, self.metrics)
+
+    @unittest_run_loop
+    async def test_send_without_dispatcher_503(self):
+        body = {"message": "hi"}
+        resp = await self.client.post(
+            "/sessions/p2p_ou_test_REQ-12345/message", json=body
+        )
+        assert resp.status == 503
+        data = await resp.json()
+        assert "dispatcher" in data.get("error", "").lower()
