@@ -233,6 +233,10 @@ async def session_reader(
                         pool.dequeue_message(session_id)
                         log_debug(f"[{session_id}] turn#{turn_count} 完成: replied={len(reply_texts)} dequeued=1 remaining={pool.pending_count(session_id)}")
 
+                    # turn 完成：session 翻回 READY（即使没匹配到 current_msg，
+                    # Claude 侧的本轮 query 也已经结束）
+                    pool.set_processing(session_id, False)
+
                     # 重置状态，准备处理下一条
                     reply_texts = []
                     reaction_id = None
@@ -248,3 +252,5 @@ async def session_reader(
             if current_msg and metrics:
                 metrics.record_message(session_id, current_msg.get("content", ""), False, "")
                 pool.dequeue_message(session_id)
+            # 异常路径也必须把 session 翻回 READY，防止 stuck PROCESSING
+            pool.set_processing(session_id, False)

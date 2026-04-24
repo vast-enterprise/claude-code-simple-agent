@@ -377,3 +377,79 @@ class TestSessionReader:
         pool = self._setup_reader(messages, pending)
         run_async(session_reader("p2p_test", pool, suffix=None))
         mock_reply.assert_called_once_with("om_test", "回复内容")
+
+    @patch("src.handler.reply_message")
+    @patch("src.handler.remove_reaction")
+    @patch("src.handler.add_reaction", return_value="r_abc")
+    def test_sets_processing_false_on_result_message(self, mock_add, mock_remove, mock_reply):
+        """ResultMessage 到达时 pool.set_processing(session_id, False) 被调用恰好一次。"""
+        messages = [
+            AssistantMessage(content=[TextBlock(text="回复")], model="sonnet"),
+            ResultMessage(subtype="result", duration_ms=100, duration_api_ms=80, is_error=False, num_turns=1, session_id="x"),
+        ]
+        pending = {"message_id": "om_test", "content": "hello"}
+        pool = self._setup_reader(messages, pending)
+
+        run_async(session_reader("p2p_test", pool))
+
+        # set_processing(sid, False) 必须在一次 turn 完成后被调用一次
+        false_calls = [c for c in pool.set_processing.call_args_list if c.args[1] is False]
+        assert len(false_calls) == 1, f"expected 1 False flip, got {pool.set_processing.call_args_list}"
+        assert false_calls[0].args[0] == "p2p_test"
+
+    @patch("src.handler.reply_message")
+    @patch("src.handler.remove_reaction")
+    @patch("src.handler.add_reaction", return_value="r_abc")
+    def test_sets_processing_false_on_exception(self, mock_add, mock_remove, mock_reply):
+        """reader 的 async-for 抛异常时也必须把 session 翻回 READY。"""
+        pool, client = _make_mock_pool()
+
+        async def failing_receive():
+            # 先 yield 一个 AssistantMessage 让 reader 进到循环体，再抛异常
+            yield AssistantMessage(content=[TextBlock(text="部分回复")], model="sonnet")
+            raise RuntimeError("upstream boom")
+
+        client.receive_response = failing_receive
+
+        call_count = [0]
+        def get_client_once(sid):
+            call_count[0] += 1
+            return client if call_count[0] <= 1 else None
+        pool.get_client = MagicMock(side_effect=get_client_once)
+
+        pending = {"message_id": "om_test", "content": "hello"}
+        pool.peek_pending = MagicMock(return_value=pending)
+        pool.dequeue_message = MagicMock(return_value=pending)
+
+        run_async(session_reader("p2p_test", pool))
+
+        false_calls = [c for c in pool.set_processing.call_args_list if c.args[1] is False]
+        assert len(false_calls) == 1, f"expected exactly 1 False flip on exception path, got {pool.set_processing.call_args_list}"
+        assert false_calls[0].args[0] == "p2p_test"
+
+    @patch("src.handler.reply_message")
+    @patch("src.handler.remove_reaction")
+    @patch("src.handler.add_reaction", return_value="r_abc")
+    def test_sets_processing_false_once_per_turn_not_on_next_assistant(
+        self, mock_add, mock_remove, mock_reply
+    ):
+        """多条消息在同一个 async-for 中流动时，False 翻转按 turn 计数（每个 ResultMessage 一次），
+        不因为下一个 turn 开始时的 AssistantMessage 而多翻一次。"""
+        messages = [
+            # 第一个 turn
+            AssistantMessage(content=[TextBlock(text="回复1")], model="sonnet"),
+            ResultMessage(subtype="result", duration_ms=100, duration_api_ms=80, is_error=False, num_turns=1, session_id="x"),
+            # 第二个 turn（新 AssistantMessage，但这里不产出 ResultMessage）
+            AssistantMessage(content=[TextBlock(text="回复2中...")], model="sonnet"),
+        ]
+        pending = {"message_id": "om_test", "content": "hello"}
+        pool = self._setup_reader(messages, pending)
+
+        run_async(session_reader("p2p_test", pool))
+
+        # 只有 1 个 ResultMessage，所以只有 1 次 False
+        false_calls = [c for c in pool.set_processing.call_args_list if c.args[1] is False]
+        assert len(false_calls) == 1, (
+            f"expected exactly 1 False flip (per ResultMessage, not per AssistantMessage), "
+            f"got {pool.set_processing.call_args_list}"
+        )
