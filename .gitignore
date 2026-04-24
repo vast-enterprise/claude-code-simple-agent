@@ -15,3 +15,6 @@ bench/transcripts/
 *.pyc
 tasks
 tasks-finished
+worktrees
+.worktrees
+node_modules
