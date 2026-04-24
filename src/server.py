@@ -459,7 +459,7 @@ async def _handle_send_message(request):
       prefix 实际不生效，此参数主要用于保持与 create 端点的对称性。
 
     响应：
-    - 200: {"status": "PROCESSING", "queued": true}
+    - 200: {"session_id": "<sid>", "status": "PROCESSING", "queued": true}
     - 400: body 非 dict / 缺 message / message 非 str / message 为空
     - 404: session_id 不在 pool.list_sessions()（调用方应改用 /create）
     - 409: pool.get_status(session_id) == PROCESSING（调用方应等待或使用 /interrupt）
@@ -539,7 +539,11 @@ async def _handle_send_message(request):
         ),
     )
 
-    return _json({"status": SessionStatus.PROCESSING, "queued": True})
+    return _json({
+        "session_id": session_id,
+        "status": SessionStatus.PROCESSING,
+        "queued": True,
+    })
 
 
 async def _handle_history_page(request):

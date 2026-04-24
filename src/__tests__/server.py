@@ -398,6 +398,7 @@ class TestSendMessage(AioHTTPTestCase):
         )
         assert resp.status == 200
         data = await resp.json()
+        assert data.get("session_id") == "p2p_ou_test_REQ-12345"
         assert data.get("status") == "PROCESSING"
         assert data.get("queued") is True
 
@@ -482,20 +483,26 @@ class TestSendMessage(AioHTTPTestCase):
         """suffix 应透传到 session_reader（通过 patch handler.session_reader 断言）"""
         from unittest.mock import patch
 
-        with patch("src.server.session_reader") as mock_reader:
-            # session_reader 被调用后应返回一个 coroutine-like 对象（或 MagicMock）
-            mock_reader.return_value = MagicMock()
+        async def _noop(*args, **kwargs):
+            pass
+
+        with patch("src.server.session_reader", side_effect=_noop) as mock_reader:
             body = {"message": "hi there", "suffix": "REQ-12345"}
             resp = await self.client.post(
                 "/sessions/p2p_ou_test_REQ-12345/message", json=body
             )
             assert resp.status == 200
+            data = await resp.json()
+            assert data.get("session_id") == "p2p_ou_test_REQ-12345"
 
             # 调用 reader_factory，触发 session_reader(...)
             call_args = self.mock_dispatcher.dispatch.await_args
             rf = call_args.kwargs.get("reader_factory")
             assert callable(rf)
-            rf()
+            coro = rf()
+            # side_effect 为 async 函数时返回真 coroutine；必须 close 以避免
+            # "coroutine was never awaited" RuntimeWarning
+            coro.close()
 
             # session_reader 被调用，suffix 参数是 "REQ-12345"
             assert mock_reader.called
@@ -507,17 +514,22 @@ class TestSendMessage(AioHTTPTestCase):
         """body 不带 suffix → session_reader 的 suffix 为 None"""
         from unittest.mock import patch
 
-        with patch("src.server.session_reader") as mock_reader:
-            mock_reader.return_value = MagicMock()
+        async def _noop(*args, **kwargs):
+            pass
+
+        with patch("src.server.session_reader", side_effect=_noop) as mock_reader:
             body = {"message": "hi"}
             resp = await self.client.post(
                 "/sessions/p2p_ou_test_REQ-12345/message", json=body
             )
             assert resp.status == 200
+            data = await resp.json()
+            assert data.get("session_id") == "p2p_ou_test_REQ-12345"
 
             call_args = self.mock_dispatcher.dispatch.await_args
             rf = call_args.kwargs.get("reader_factory")
-            rf()
+            coro = rf()
+            coro.close()
 
             assert mock_reader.called
             _, kwargs = mock_reader.call_args
