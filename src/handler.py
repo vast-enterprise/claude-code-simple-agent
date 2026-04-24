@@ -23,6 +23,21 @@ if TYPE_CHECKING:
 BOT_MENTION = f"@{BOT_NAME}"
 
 
+def _is_internal_message(message_id: str) -> bool:
+    """判断 message_id 是否为控制平面虚构 ID（不对应真实飞书消息）。
+
+    HTTP 控制平面端点（POST /sessions/{owner_id}/create，以及后续的 /message）
+    会构造虚拟事件，其 message_id 形如 "internal-<uuid>"。session_reader
+    必须跳过所有针对此类 message_id 的 lark-cli 副作用（add_reaction /
+    remove_reaction / reply_message）——否则每条 Claude 响应都会对不存在的
+    message_id 触发 2-3 次 lark-cli subprocess 失败，日志污染 + 运维噪音。
+
+    核心状态机（dequeue_message / set_processing / save_claude_session_id /
+    metrics.record_message）仍照常推进——只跳过用户侧可见的 lark 反馈。
+    """
+    return isinstance(message_id, str) and message_id.startswith("internal-")
+
+
 def compute_session_id(event: dict) -> str:
     """根据事件计算 session ID：P2P 按用户，群聊按群+用户"""
     chat_type = event.get("chat_type", "p2p")
@@ -201,7 +216,9 @@ async def session_reader(
                         pool.save_claude_session_id(session_id, msg.session_id)
                         claude_session_saved = True
                     if reaction_id is None and current_msg:
-                        reaction_id = add_reaction(current_msg["message_id"])
+                        # 控制平面虚构 message_id 跳过 lark 副作用
+                        if not _is_internal_message(current_msg["message_id"]):
+                            reaction_id = add_reaction(current_msg["message_id"])
                     # 每个 AssistantMessage 的文本收集为独立条目
                     turn_text = ""
                     for block in msg.content:
@@ -222,17 +239,19 @@ async def session_reader(
                     # dequeue 一条，逐条回复到该消息
                     if current_msg:
                         mid = current_msg["message_id"]
-                        if reaction_id:
+                        is_internal = _is_internal_message(mid)
+                        if reaction_id and not is_internal:
                             remove_reaction(mid, reaction_id)
-                        for text in reply_texts:
-                            if suffix:
-                                text = f"来自 {suffix} 的回复：\n{text}"
-                            reply_message(mid, text)
+                        if not is_internal:
+                            for text in reply_texts:
+                                if suffix:
+                                    text = f"来自 {suffix} 的回复：\n{text}"
+                                reply_message(mid, text)
                         if metrics:
                             summary = reply_texts[0][:50] if reply_texts else ""
                             metrics.record_message(session_id, current_msg.get("content", ""), success, summary)
                         pool.dequeue_message(session_id)
-                        log_debug(f"[{session_id}] turn#{turn_count} 完成: replied={len(reply_texts)} dequeued=1 remaining={pool.pending_count(session_id)}")
+                        log_debug(f"[{session_id}] turn#{turn_count} 完成: replied={len(reply_texts)} dequeued=1 remaining={pool.pending_count(session_id)} internal={is_internal}")
 
                     # turn 完成：session 翻回 READY（即使没匹配到 current_msg，
                     # Claude 侧的本轮 query 也已经结束）
@@ -255,7 +274,7 @@ async def session_reader(
             raise
         except Exception as e:
             log_error(f"[{session_id}] reader 异常: {e}")
-            if reaction_id and current_msg:
+            if reaction_id and current_msg and not _is_internal_message(current_msg["message_id"]):
                 remove_reaction(current_msg["message_id"], reaction_id)
             if current_msg and metrics:
                 metrics.record_message(session_id, current_msg.get("content", ""), False, "")

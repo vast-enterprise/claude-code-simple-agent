@@ -475,6 +475,38 @@ class TestSessionReader:
     @patch("src.handler.reply_message")
     @patch("src.handler.remove_reaction")
     @patch("src.handler.add_reaction", return_value="r_abc")
+    def test_skips_lark_side_effects_for_internal_message_id(
+        self, mock_add, mock_remove, mock_reply
+    ):
+        """message_id 以 "internal-" 开头（控制平面虚构 ID）时，
+        reader 必须跳过所有 lark 副作用（add/remove_reaction、reply_message），
+        但核心状态机仍要推进：dequeue_message + set_processing(False)。
+        """
+        messages = [
+            AssistantMessage(content=[TextBlock(text="Claude 回复")], model="sonnet"),
+            ResultMessage(
+                subtype="result", duration_ms=100, duration_api_ms=80,
+                is_error=False, num_turns=1, session_id="x",
+            ),
+        ]
+        pending = {"message_id": "internal-abc123", "content": "hi"}
+        pool = self._setup_reader(messages, pending)
+
+        run_async(session_reader("p2p_ou_owner_REQ-1", pool, suffix="REQ-1"))
+
+        # 所有 lark 副作用都必须跳过
+        mock_add.assert_not_called()
+        mock_remove.assert_not_called()
+        mock_reply.assert_not_called()
+
+        # 但核心状态机照常推进
+        pool.dequeue_message.assert_called_once_with("p2p_ou_owner_REQ-1")
+        false_calls = [c for c in pool.set_processing.call_args_list if c.args[1] is False]
+        assert len(false_calls) == 1
+
+    @patch("src.handler.reply_message")
+    @patch("src.handler.remove_reaction")
+    @patch("src.handler.add_reaction", return_value="r_abc")
     def test_sets_processing_false_once_per_turn_not_on_next_assistant(
         self, mock_add, mock_remove, mock_reply
     ):
