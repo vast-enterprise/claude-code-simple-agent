@@ -18,7 +18,7 @@
 ### architecture/
 | 文档 | 说明 |
 |------|------|
-| [event-pipeline.md](architecture/event-pipeline.md) | 事件驱动管道、query/response 解耦模型（send_message + session_reader）、router 命令路由层（/new /switch $suffix /sessions /clear /clear-all /interrupt）、multi-session suffix 机制、DefaultsStore、prompt 构建（_build_prompt: 角色·名字·ID·场景上下文）、富消息预处理、per-session FIFO 队列、分段发送、reader task 生命周期、session resume |
+| [event-pipeline.md](architecture/event-pipeline.md) | 事件驱动管道、query/response 解耦模型（send_message + session_reader）、router 命令路由层（/new /switch $suffix /sessions /clear /clear-all /interrupt）、multi-session suffix 机制、DefaultsStore、prompt 构建（_build_prompt: 角色·名字·ID·场景上下文）、富消息预处理、per-session FIFO 队列、分段发送、reader task 生命周期、session resume、SessionStatus 状态机（NONE/CREATED/READY/PROCESSING）、LRU 跳过 PROCESSING、HTTP 调度控制面（/sessions/{owner_id} + POST create/message）、internal-* 虚构消息 ID 契约 |
 | [observability.md](architecture/observability.md) | 可观测性体系：异常通知、session 持久化、历史归档、指标收集、HTTP API、Dashboard、Session 详情页、历史记录页、Conversation API、名字解析 |
 | [lark-interaction.md](architecture/lark-interaction.md) | 飞书交互层：消息回复（markdown 富文本 + markdown 表格预处理 + 纯文本降级）、表情反馈、事件订阅、富消息解析（merge_forward/image/file/audio/video/sticker/media + 内联图片兜底）、图片下载与解析 |
 | [permission-model.md](architecture/permission-model.md) | 双层权限模型：代码强制 + prompt 约束 |
