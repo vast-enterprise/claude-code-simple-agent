@@ -13,7 +13,7 @@ from claude_agent_sdk.types import AssistantMessage, ResultMessage, TextBlock
 
 import src.permissions as permissions
 from src.config import OWNER_ID, BOT_NAME, log_debug, log_error
-from src.lark import add_reaction, remove_reaction, reply_message, resolve_rich_content, resolve_user_name, resolve_chat_name
+from src.lark import add_reaction, remove_reaction, reply_message, resolve_user_name, resolve_chat_name
 from src.pool import ClientPool
 
 if TYPE_CHECKING:
@@ -141,6 +141,7 @@ async def send_message(
 
         # query 仅写 stdin，不阻塞
         claude_sid = pool.get_claude_session_id(session_id)
+        log_debug(f"[{session_id}] query: resume={claude_sid!r} pending_before={pool.pending_count(session_id)}")
         await client.query(prompt, session_id=claude_sid)
 
         # 入队 FIFO，reader task 据此匹配 response → 飞书回复
@@ -165,6 +166,7 @@ async def session_reader(
     Claude 可能合并多条 query 到一个 turn，此时回复内容覆盖多个问题，
     但 dequeue 仍只弹一条——后续 turn 会处理剩余消息。
     """
+    turn_count = 0
     while True:
         client = pool.get_client(session_id)
         if not client:
@@ -178,12 +180,16 @@ async def session_reader(
         claude_session_saved = False
 
         try:
+            msg_index = 0
             async for msg in client.receive_response():
+                msg_index += 1
+                log_debug(f"[{session_id}] msg#{msg_index} type={type(msg).__name__} pending={pool.pending_count(session_id)}")
                 # 从 FIFO 队头获取当前处理的飞书消息
                 if current_msg is None:
                     current_msg = pool.peek_pending(session_id)
 
                 if isinstance(msg, AssistantMessage):
+                    log_debug(f"[{session_id}] AssistantMessage: session_id={msg.session_id!r} saved={claude_session_saved} blocks={len(msg.content)}")
                     if not claude_session_saved and msg.session_id:
                         log_debug(f"[{session_id}] claude session: {msg.session_id}")
                         pool.save_claude_session_id(session_id, msg.session_id)
@@ -199,6 +205,7 @@ async def session_reader(
                         reply_texts.append(turn_text.strip())
 
                 elif isinstance(msg, ResultMessage):
+                    log_debug(f"[{session_id}] ResultMessage: session_id={msg.session_id!r} saved={claude_session_saved} is_error={msg.is_error}")
                     if not claude_session_saved and msg.session_id:
                         log_debug(f"[{session_id}] claude session: {msg.session_id}")
                         pool.save_claude_session_id(session_id, msg.session_id)
@@ -219,6 +226,7 @@ async def session_reader(
                             summary = reply_texts[0][:50] if reply_texts else ""
                             metrics.record_message(session_id, current_msg.get("content", ""), success, summary)
                         pool.dequeue_message(session_id)
+                        log_debug(f"[{session_id}] turn#{turn_count} 完成: replied={len(reply_texts)} dequeued=1 remaining={pool.pending_count(session_id)}")
 
                     # 重置状态，准备处理下一条
                     reply_texts = []
@@ -226,6 +234,7 @@ async def session_reader(
                     current_msg = None
                     success = True
                     claude_session_saved = False
+                    turn_count += 1
 
         except Exception as e:
             log_error(f"[{session_id}] reader 异常: {e}")
