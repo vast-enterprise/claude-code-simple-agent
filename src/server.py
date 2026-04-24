@@ -268,6 +268,59 @@ async def _handle_session_page(request):
     return web.FileResponse(_SESSION_PAGE_PATH)
 
 
+# ── 调度控制面（/sessions/*，不在 /api/ 命名空间下） ──
+
+
+def _owner_matches(session_id: str, owner_id: str) -> bool:
+    """判断 session_id 是否属于指定 owner。
+
+    精确前缀匹配，避免 `ou_test` 命中 `ou_testing_*` 这样的跨 owner 泄露。
+    模仿 src/router.py::_is_user_session 的模式。
+
+    规则：
+    - p2p: sid == f"p2p_{owner_id}" 或 sid.startswith(f"p2p_{owner_id}_")
+    - group: sid 以 "group_" 开头，且 owner_id 作为完整段出现
+             （即 f"_{owner_id}" 后紧跟 "_" 或行尾）
+    """
+    p2p_base = f"p2p_{owner_id}"
+    if session_id == p2p_base or session_id.startswith(p2p_base + "_"):
+        return True
+    if session_id.startswith("group_"):
+        seg = f"_{owner_id}"
+        if session_id.endswith(seg) or (seg + "_") in session_id:
+            return True
+    return False
+
+
+async def _handle_sessions_by_owner(request):
+    """GET /sessions/{owner_id} — 列出 owner 名下所有 session 及其实时状态。
+
+    dispatch 控制面读端点：调用方（主 Claude agent）通过此端点发现
+    owner 当前有哪些 session / 各自的 task_id / 状态，以决定发给谁或新建。
+    """
+    owner_id = request.match_info["owner_id"]
+    pool = request.app["pool"]
+
+    # 防御性：pool._store 为 None 时（测试场景/未注入 store）返回空
+    if getattr(pool, "_store", None) is None:
+        return _json({"sessions": []})
+
+    raw = pool.list_sessions()
+    sessions_out = []
+    for sid, meta in raw.items():
+        if not _owner_matches(sid, owner_id):
+            continue
+        sessions_out.append({
+            "session_id": sid,
+            "status": pool.get_status(sid),
+            "task_id": meta.get("task_id"),
+            "task_type": meta.get("task_type"),
+            "last_active": meta.get("last_active", ""),
+            "pending_count": pool.pending_count(sid),
+        })
+    return _json({"sessions": sessions_out})
+
+
 async def _handle_history_page(request):
     """返回历史记录页 HTML"""
     if not _HISTORY_PAGE_PATH.exists():
@@ -295,6 +348,9 @@ def _create_app(pool, metrics) -> web.Application:
     app.router.add_post("/api/sessions/{session_id}/clear", _handle_session_clear)
     app.router.add_post("/api/sessions/{session_id}/compact", _handle_session_compact)
     app.router.add_post("/api/sessions/{session_id}/interrupt", _handle_session_interrupt)
+
+    # 调度控制面：/sessions/{owner_id} 挂在根路径下，与 /api/* 分开
+    app.router.add_get("/sessions/{owner_id}", _handle_sessions_by_owner)
 
     return app
 
