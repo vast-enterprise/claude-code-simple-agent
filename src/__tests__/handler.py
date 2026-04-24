@@ -1,7 +1,7 @@
 """handler 模块测试：send_message + session_reader"""
 
 import asyncio
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, call, patch
 
 import pytest
 
@@ -426,6 +426,51 @@ class TestSessionReader:
         false_calls = [c for c in pool.set_processing.call_args_list if c.args[1] is False]
         assert len(false_calls) == 1, f"expected exactly 1 False flip on exception path, got {pool.set_processing.call_args_list}"
         assert false_calls[0].args[0] == "p2p_test"
+
+    @patch("src.handler.reply_message")
+    @patch("src.handler.remove_reaction")
+    @patch("src.handler.add_reaction", return_value="r_abc")
+    def test_sets_processing_false_on_cancellation(self, mock_add, mock_remove, mock_reply):
+        """reader task 被 cancel（/clear、eviction、shutdown）时，必须翻回 READY 并把
+        CancelledError 向上抛，让 _reader_wrapper 能正常清理。
+        """
+        pool, client = _make_mock_pool()
+
+        async def hung_generator():
+            # 先 yield 一个 AssistantMessage 让 reader 进入 try 块
+            yield AssistantMessage(content=[TextBlock(text="部分")], model="sonnet")
+            # 然后无限挂起，等待外部 cancel
+            await asyncio.Event().wait()
+
+        client.receive_response = hung_generator
+
+        call_count = [0]
+        def get_client_once(sid):
+            call_count[0] += 1
+            return client if call_count[0] <= 1 else None
+        pool.get_client = MagicMock(side_effect=get_client_once)
+
+        pending = {"message_id": "om_test", "content": "hello"}
+        pool.peek_pending = MagicMock(return_value=pending)
+
+        async def run():
+            task = asyncio.create_task(session_reader("p2p_test", pool))
+            # 让 task 进入 async for 并挂起在 Event().wait()
+            await asyncio.sleep(0.01)
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+
+        run_async(run())
+
+        # (b) False flip 必须在 CancelledError 向上抛之前发生
+        false_calls = [
+            c for c in pool.set_processing.call_args_list
+            if c == call("p2p_test", False)
+        ]
+        assert len(false_calls) == 1, (
+            f"expected exactly 1 False flip on cancellation, got {pool.set_processing.call_args_list}"
+        )
 
     @patch("src.handler.reply_message")
     @patch("src.handler.remove_reaction")

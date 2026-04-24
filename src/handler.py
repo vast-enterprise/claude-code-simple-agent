@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import TYPE_CHECKING
 
 from claude_agent_sdk.types import AssistantMessage, ResultMessage, TextBlock
@@ -245,6 +246,13 @@ async def session_reader(
                     claude_session_saved = False
                     turn_count += 1
 
+        except asyncio.CancelledError:
+            # 取消路径（/clear / eviction / shutdown）：CancelledError 不是 Exception 的子类，
+            # 不会被下面的 except Exception 拦下。必须单独处理，确保 PROCESSING 不变式
+            # （每个 True 都有对应的 False）自洽于 handler，不依赖 pool.py 的 pop 兜底。
+            # raise 保留给上游 _reader_wrapper 做任务级清理。
+            pool.set_processing(session_id, False)
+            raise
         except Exception as e:
             log_error(f"[{session_id}] reader 异常: {e}")
             if reaction_id and current_msg:
