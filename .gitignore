@@ -2,6 +2,7 @@
 config.json
 config.yes.json
 config.vast.json
+config.glm.json
 __pycache__
 tmp
 .pytest_cache
