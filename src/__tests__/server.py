@@ -188,3 +188,147 @@ class TestSessionsByOwner(AioHTTPTestCase):
         assert resp.status == 200
         data = await resp.json()
         assert data == {"sessions": []}
+
+
+class TestCreateSession(AioHTTPTestCase):
+    """POST /sessions/{owner_id}/create — dispatch 控制面写端点"""
+
+    async def get_application(self):
+        self.mock_pool = MagicMock()
+        self.mock_pool.list_sessions.return_value = {}  # 默认：无会话
+        self.mock_pool.get_status = MagicMock(return_value="PROCESSING")
+        self.mock_pool.pending_count = MagicMock(return_value=1)
+        self.mock_pool.active_client_count.return_value = 0
+        self.mock_pool.max_active_clients = 5
+        # store 默认非 None，save 可观测
+        self.mock_pool._store = MagicMock()
+        self.mock_pool._store.load_all = MagicMock(return_value={})
+        self.mock_pool._store.save = MagicMock()
+
+        self.metrics = MetricsCollector()
+
+        # dispatcher：AsyncMock，可断言被 await 一次
+        self.mock_dispatcher = MagicMock()
+        self.mock_dispatcher.dispatch = AsyncMock()
+
+        return _create_app(self.mock_pool, self.metrics, dispatcher=self.mock_dispatcher)
+
+    @unittest_run_loop
+    async def test_happy_path_creates_and_dispatches(self):
+        """合法请求 → 200，dispatcher.dispatch 被 await 一次，store.save 带 task 元数据"""
+        body = {
+            "suffix": "REQ-12345",
+            "message": "继续推进需求 REQ-12345",
+            "task_id": "REQ-12345",
+            "task_type": "requirement",
+        }
+        resp = await self.client.post("/sessions/ou_test/create", json=body)
+        assert resp.status == 200
+        data = await resp.json()
+        assert data["session_id"] == "p2p_ou_test_REQ-12345"
+        assert data["created"] is True
+        assert data["status"] == "PROCESSING"
+
+        # dispatcher.dispatch 应被调用一次，session_id 匹配
+        assert self.mock_dispatcher.dispatch.await_count == 1
+        call_args = self.mock_dispatcher.dispatch.await_args
+        # 第一个位置参数是 session_id
+        assert call_args.args[0] == "p2p_ou_test_REQ-12345"
+        # 第二个位置参数是 send_message 协程
+        import inspect
+        assert inspect.iscoroutine(call_args.args[1])
+        # reader_factory 以 kw 传入，调用后应返回协程
+        rf = call_args.kwargs.get("reader_factory")
+        assert callable(rf)
+
+        # store.save 被调用，包含 task_id/task_type
+        save_calls = self.mock_pool._store.save.call_args_list
+        # 找到带 task_id 的那次
+        task_saves = [
+            c for c in save_calls
+            if len(c.args) >= 2 and isinstance(c.args[1], dict) and "task_id" in c.args[1]
+        ]
+        assert len(task_saves) >= 1
+        saved_sid, saved_meta = task_saves[0].args
+        assert saved_sid == "p2p_ou_test_REQ-12345"
+        assert saved_meta.get("task_id") == "REQ-12345"
+        assert saved_meta.get("task_type") == "requirement"
+
+    @unittest_run_loop
+    async def test_missing_suffix_400(self):
+        body = {"message": "hi"}
+        resp = await self.client.post("/sessions/ou_test/create", json=body)
+        assert resp.status == 400
+        data = await resp.json()
+        assert "error" in data
+
+    @unittest_run_loop
+    async def test_empty_suffix_400(self):
+        body = {"suffix": "", "message": "hi"}
+        resp = await self.client.post("/sessions/ou_test/create", json=body)
+        assert resp.status == 400
+
+    @unittest_run_loop
+    async def test_empty_message_400(self):
+        body = {"suffix": "REQ-1", "message": ""}
+        resp = await self.client.post("/sessions/ou_test/create", json=body)
+        assert resp.status == 400
+        data = await resp.json()
+        assert "error" in data
+
+    @unittest_run_loop
+    async def test_session_already_exists_409(self):
+        """session_id 已在 store 中 → 409，不调用 dispatcher"""
+        self.mock_pool._store.load_all = MagicMock(return_value={
+            "p2p_ou_test_REQ-1": {"task_id": "REQ-1"},
+        })
+        body = {"suffix": "REQ-1", "message": "hi"}
+        resp = await self.client.post("/sessions/ou_test/create", json=body)
+        assert resp.status == 409
+        data = await resp.json()
+        assert data["session_id"] == "p2p_ou_test_REQ-1"
+        assert "error" in data
+        # dispatcher 不应被调用
+        assert self.mock_dispatcher.dispatch.await_count == 0
+
+    @unittest_run_loop
+    async def test_task_id_omitted_no_task_save(self):
+        """请求不带 task_id/task_type → 200，store.save 不应以 task_id 作为元数据写入"""
+        body = {"suffix": "REQ-2", "message": "hi"}
+        resp = await self.client.post("/sessions/ou_test/create", json=body)
+        assert resp.status == 200
+        data = await resp.json()
+        assert data["session_id"] == "p2p_ou_test_REQ-2"
+        assert data["created"] is True
+        # 检查 store.save 没有带 task_id 的调用（pool.get() 内部的 save 也可能被调，
+        # 但我们 mock 的是 pool._store.save，pool.get() 也是 mock，所以这里只看
+        # handler 主动触发的 save——应该没有包含 task_id 的）
+        save_calls = self.mock_pool._store.save.call_args_list
+        for c in save_calls:
+            if len(c.args) >= 2 and isinstance(c.args[1], dict):
+                assert "task_id" not in c.args[1]
+                assert "task_type" not in c.args[1]
+
+
+class TestCreateSessionNoDispatcher(AioHTTPTestCase):
+    """dispatcher 未注入时 → 503"""
+
+    async def get_application(self):
+        self.mock_pool = MagicMock()
+        self.mock_pool.list_sessions.return_value = {}
+        self.mock_pool.active_client_count.return_value = 0
+        self.mock_pool.max_active_clients = 5
+        self.mock_pool._store = MagicMock()
+        self.mock_pool._store.load_all = MagicMock(return_value={})
+
+        self.metrics = MetricsCollector()
+        # 不传 dispatcher
+        return _create_app(self.mock_pool, self.metrics)
+
+    @unittest_run_loop
+    async def test_create_without_dispatcher_503(self):
+        body = {"suffix": "REQ-1", "message": "hi"}
+        resp = await self.client.post("/sessions/ou_test/create", json=body)
+        assert resp.status == 503
+        data = await resp.json()
+        assert "dispatcher" in data.get("error", "").lower()

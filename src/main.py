@@ -104,7 +104,7 @@ async def main():
     )
     metrics = MetricsCollector()
 
-    server_runner = await start_server(pool, metrics, port=8420)
+    server_runner = await start_server(pool, metrics, dispatcher=dispatcher, port=8420)
 
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGTERM, signal.SIGINT):

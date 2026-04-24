@@ -1,11 +1,13 @@
 """HTTP API server for avatar dashboard"""
 
 import json
+import uuid
 from pathlib import Path
 
 from aiohttp import web
 
 from src.config import ROOT, log_info
+from src.handler import send_message, session_reader
 
 _DASHBOARD_PATH = Path(__file__).parent / "dashboard.html"
 _SESSION_PAGE_PATH = Path(__file__).parent / "session.html"
@@ -321,6 +323,95 @@ async def _handle_sessions_by_owner(request):
     return _json({"sessions": sessions_out})
 
 
+async def _handle_create_session(request):
+    """POST /sessions/{owner_id}/create — 新建 p2p session 并 dispatch 首条消息。
+
+    调用方（主 Claude agent）在为某个需求/bug 开分身会话时通过此端点创建。
+    语义：
+    - 校验 suffix / message 非空 → 400
+    - 计算 session_id = f"p2p_{owner_id}_{suffix}"
+    - 若 session_id 已在 store → 409（调用方应改用 /message 复用）
+    - 若 dispatcher 未注入 → 503
+    - 写 task_id / task_type 元数据（若提供）
+    - 通过 dispatcher.dispatch 派发首条消息（send_message + session_reader）
+    - 返回 session_id / status / created=true
+    """
+    owner_id = request.match_info["owner_id"]
+    pool = request.app["pool"]
+    metrics = request.app["metrics"]
+    dispatcher = request.app.get("dispatcher")
+
+    # 校验 dispatcher 注入（测试/开发场景下可能未配置）
+    if dispatcher is None:
+        return _json({"error": "dispatcher unavailable"}, status=503)
+
+    # 解析 body
+    try:
+        body = await request.json()
+    except (json.JSONDecodeError, ValueError):
+        return _json({"error": "invalid json body"}, status=400)
+
+    if not isinstance(body, dict):
+        return _json({"error": "body must be a json object"}, status=400)
+
+    suffix = body.get("suffix")
+    message = body.get("message")
+    task_id = body.get("task_id")
+    task_type = body.get("task_type")
+
+    # 校验 suffix / message
+    if not isinstance(suffix, str) or not suffix.strip():
+        return _json({"error": "suffix required (non-empty string)"}, status=400)
+    if not isinstance(message, str) or not message.strip():
+        return _json({"error": "message required (non-empty string)"}, status=400)
+
+    session_id = f"p2p_{owner_id}_{suffix}"
+
+    # 409：session 已存在（调用方应改用 /message 端点复用）
+    if pool._store is not None:
+        existing = pool._store.load_all()
+        if session_id in existing:
+            return _json(
+                {"error": "session already exists", "session_id": session_id},
+                status=409,
+            )
+
+    # 先写 task 元数据（save 是幂等 merge，先写后写都 OK；先写更简单）
+    if pool._store is not None and (task_id or task_type):
+        meta: dict = {}
+        if task_id:
+            meta["task_id"] = task_id
+        if task_type:
+            meta["task_type"] = task_type
+        pool._store.save(session_id, meta)
+
+    # 构造虚拟事件，镜像 route_message 从真实 Lark 事件计算出的结构
+    event = {
+        "chat_type": "p2p",
+        "sender_id": owner_id,
+        "sender_type": "user",  # 防御性：避免 should_respond 过滤
+        "message_id": f"internal-{uuid.uuid4()}",
+        "content": message,
+        "chat_id": owner_id,
+    }
+
+    # 派发首条消息（镜像 src/router.py::_dispatch_to_session）
+    await dispatcher.dispatch(
+        session_id,
+        send_message(pool, event, session_id, message, metrics=metrics),
+        reader_factory=lambda sid=session_id, sfx=suffix: session_reader(
+            sid, pool, suffix=sfx, metrics=metrics
+        ),
+    )
+
+    status = pool.get_status(session_id)
+    return _json({
+        "session_id": session_id,
+        "status": status,
+        "created": True,
+    })
+
+
 async def _handle_history_page(request):
     """返回历史记录页 HTML"""
     if not _HISTORY_PAGE_PATH.exists():
@@ -331,10 +422,11 @@ async def _handle_history_page(request):
 # ── App 创建与启动 ──
 
 
-def _create_app(pool, metrics) -> web.Application:
+def _create_app(pool, metrics, *, dispatcher=None) -> web.Application:
     app = web.Application()
     app["pool"] = pool
     app["metrics"] = metrics
+    app["dispatcher"] = dispatcher
 
     app.router.add_get("/", _handle_dashboard)
     app.router.add_get("/session.html", _handle_session_page)
@@ -349,15 +441,16 @@ def _create_app(pool, metrics) -> web.Application:
     app.router.add_post("/api/sessions/{session_id}/compact", _handle_session_compact)
     app.router.add_post("/api/sessions/{session_id}/interrupt", _handle_session_interrupt)
 
-    # 调度控制面：/sessions/{owner_id} 挂在根路径下，与 /api/* 分开
+    # 调度控制面：/sessions/{owner_id}/* 挂在根路径下，与 /api/* 分开
     app.router.add_get("/sessions/{owner_id}", _handle_sessions_by_owner)
+    app.router.add_post("/sessions/{owner_id}/create", _handle_create_session)
 
     return app
 
 
-async def start_server(pool, metrics, port: int = 8420) -> web.AppRunner:
+async def start_server(pool, metrics, *, dispatcher=None, port: int = 8420) -> web.AppRunner:
     """启动 HTTP server，返回 runner（用于 shutdown 时 cleanup）"""
-    app = _create_app(pool, metrics)
+    app = _create_app(pool, metrics, dispatcher=dispatcher)
     runner = web.AppRunner(app)
     await runner.setup()
     site = web.TCPSite(runner, "127.0.0.1", port)
