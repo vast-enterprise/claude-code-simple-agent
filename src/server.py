@@ -1,6 +1,7 @@
 """HTTP API server for avatar dashboard"""
 
 import json
+import re
 import uuid
 from pathlib import Path
 
@@ -8,6 +9,9 @@ from aiohttp import web
 
 from src.config import ROOT, log_info
 from src.handler import send_message, session_reader
+
+# suffix 白名单：避免与飞书侧 /new {suffix} / $suffix 解析冲突（空格、换行、$、/ 等）
+_SUFFIX_PATTERN = re.compile(r"[A-Za-z0-9_\-\.]+")
 
 _DASHBOARD_PATH = Path(__file__).parent / "dashboard.html"
 _SESSION_PAGE_PATH = Path(__file__).parent / "session.html"
@@ -327,14 +331,31 @@ async def _handle_create_session(request):
     """POST /sessions/{owner_id}/create — 新建 p2p session 并 dispatch 首条消息。
 
     调用方（主 Claude agent）在为某个需求/bug 开分身会话时通过此端点创建。
+
+    Request body 字段：
+    - suffix (str, required, non-empty, whitelist `[A-Za-z0-9_\\-\\.]+`)
+      — 会话标识，用于拼接 session_id；白名单避免与飞书侧
+      `/new {suffix}` / `$suffix` 命令解析冲突。
+    - message (str, required, non-empty) — 首条消息内容
+    - task_id (str, optional) — 需求/Bug 单号，写入 store 元数据
+    - task_type (str, optional) — 任务类型（如 "requirement" / "bug"），写入 store 元数据
+
     语义：
-    - 校验 suffix / message 非空 → 400
-    - 计算 session_id = f"p2p_{owner_id}_{suffix}"
+    - 校验输入 → 400
+    - 计算 session_id = f"p2p_{{owner_id}}_{{suffix}}"
     - 若 session_id 已在 store → 409（调用方应改用 /message 复用）
     - 若 dispatcher 未注入 → 503
     - 写 task_id / task_type 元数据（若提供）
     - 通过 dispatcher.dispatch 派发首条消息（send_message + session_reader）
     - 返回 session_id / status / created=true
+
+    注意事项：
+    - 409 检查与后续 save 非原子（TOCTOU）。同一 suffix 并发 create 可能导致二次派发——
+      pool 层 per-session lock 防止重复建 client，但 FIFO 会入队两条消息。
+      调用方应在其侧串行化同一 suffix 的 create 请求。
+    - 返回 200 仅表示派发已接受。send_message 内部异常被 dispatcher.dispatch swallow
+      （只 log_error），调用方需通过 GET /sessions/{{owner_id}} 观测 status 字段
+      来确认消息是否真正被 Claude 受理。
     """
     owner_id = request.match_info["owner_id"]
     pool = request.app["pool"]
@@ -362,19 +383,30 @@ async def _handle_create_session(request):
     # 校验 suffix / message
     if not isinstance(suffix, str) or not suffix.strip():
         return _json({"error": "suffix required (non-empty string)"}, status=400)
+    if not _SUFFIX_PATTERN.fullmatch(suffix):
+        return _json(
+            {"error": "suffix must match [A-Za-z0-9_\\-\\.]+ (no spaces / special chars)"},
+            status=400,
+        )
     if not isinstance(message, str) or not message.strip():
         return _json({"error": "message required (non-empty string)"}, status=400)
+
+    # 校验可选字段类型
+    if task_id is not None and not isinstance(task_id, str):
+        return _json({"error": "task_id must be a string"}, status=400)
+    if task_type is not None and not isinstance(task_type, str):
+        return _json({"error": "task_type must be a string"}, status=400)
 
     session_id = f"p2p_{owner_id}_{suffix}"
 
     # 409：session 已存在（调用方应改用 /message 端点复用）
-    if pool._store is not None:
-        existing = pool._store.load_all()
-        if session_id in existing:
-            return _json(
-                {"error": "session already exists", "session_id": session_id},
-                status=409,
-            )
+    # 用 pool.list_sessions() 而非 pool._store.load_all()，保持封装
+    existing = pool.list_sessions()
+    if session_id in existing:
+        return _json(
+            {"error": "session already exists", "session_id": session_id},
+            status=409,
+        )
 
     # 先写 task 元数据（save 是幂等 merge，先写后写都 OK；先写更简单）
     if pool._store is not None and (task_id or task_type):

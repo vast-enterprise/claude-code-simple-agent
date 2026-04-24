@@ -279,9 +279,10 @@ class TestCreateSession(AioHTTPTestCase):
     @unittest_run_loop
     async def test_session_already_exists_409(self):
         """session_id 已在 store 中 → 409，不调用 dispatcher"""
-        self.mock_pool._store.load_all = MagicMock(return_value={
+        # handler 通过 pool.list_sessions() 查——这是 pool 对 store 的公共封装
+        self.mock_pool.list_sessions.return_value = {
             "p2p_ou_test_REQ-1": {"task_id": "REQ-1"},
-        })
+        }
         body = {"suffix": "REQ-1", "message": "hi"}
         resp = await self.client.post("/sessions/ou_test/create", json=body)
         assert resp.status == 409
@@ -289,6 +290,37 @@ class TestCreateSession(AioHTTPTestCase):
         assert data["session_id"] == "p2p_ou_test_REQ-1"
         assert "error" in data
         # dispatcher 不应被调用
+        assert self.mock_dispatcher.dispatch.await_count == 0
+
+    @unittest_run_loop
+    async def test_task_id_non_string_400(self):
+        """task_id 必须是 str；传 int → 400"""
+        body = {"suffix": "REQ-3", "message": "hi", "task_id": 123}
+        resp = await self.client.post("/sessions/ou_test/create", json=body)
+        assert resp.status == 400
+        data = await resp.json()
+        assert "task_id" in data.get("error", "")
+        # 不应触发 dispatch
+        assert self.mock_dispatcher.dispatch.await_count == 0
+
+    @unittest_run_loop
+    async def test_task_type_non_string_400(self):
+        """task_type 必须是 str；传 dict → 400"""
+        body = {"suffix": "REQ-4", "message": "hi", "task_type": {"nested": "bad"}}
+        resp = await self.client.post("/sessions/ou_test/create", json=body)
+        assert resp.status == 400
+        data = await resp.json()
+        assert "task_type" in data.get("error", "")
+        assert self.mock_dispatcher.dispatch.await_count == 0
+
+    @unittest_run_loop
+    async def test_suffix_whitelist_rejects_space(self):
+        """suffix 含空格 → 400（与飞书 $suffix / /new ... 解析冲突）"""
+        body = {"suffix": "foo bar", "message": "hi"}
+        resp = await self.client.post("/sessions/ou_test/create", json=body)
+        assert resp.status == 400
+        data = await resp.json()
+        assert "suffix" in data.get("error", "").lower()
         assert self.mock_dispatcher.dispatch.await_count == 0
 
     @unittest_run_loop
