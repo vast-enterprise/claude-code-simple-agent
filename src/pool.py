@@ -190,15 +190,24 @@ class ClientPool:
         return len(self._clients)
 
     def _select_lru_session(self) -> str | None:
-        """选择当前 _clients 中 last_active 最早的 session"""
-        if not self._clients:
+        """选择当前 _clients 中 last_active 最早的可回收 session。
+
+        PROCESSING 中的 session 必须跳过——正在 query / 等 ResultMessage
+        的 reader 被 cancel 会丢失本轮响应。若所有 session 都在 PROCESSING，
+        返回 None，调用方（get()）会 break，池允许临时超出上限。
+        """
+        candidates = [
+            sid for sid in self._clients.keys()
+            if not self._processing.get(sid, False)
+        ]
+        if not candidates:
             return None
         store_data: dict = {}
         if self._store:
             store_data = self._store.load_all()
         def sort_key(sid: str) -> str:
             return store_data.get(sid, {}).get("last_active", "")
-        return min(self._clients.keys(), key=sort_key)
+        return min(candidates, key=sort_key)
 
     async def _evict_lru(self) -> str | None:
         """回收最久未活跃的 session：disconnect + cancel reader + 清空 FIFO，保留 store 元数据"""

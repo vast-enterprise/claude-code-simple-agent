@@ -568,6 +568,103 @@ class TestPoolEviction:
         pool = ClientPool(MagicMock())
         assert pool.max_active_clients == 5
 
+    @patch("src.pool.ClaudeSDKClient")
+    def test_select_lru_returns_none_when_all_processing(self, MockClient):
+        """所有活跃 session 都处于 PROCESSING 时 _select_lru_session 返回 None"""
+        def make_client(**kwargs):
+            m = MagicMock()
+            m.connect = AsyncMock()
+            m.disconnect = AsyncMock()
+            return m
+        MockClient.side_effect = make_client
+
+        store = self._make_store({
+            "s1": {"last_active": "2026-04-16T01:00:00+00:00"},
+            "s2": {"last_active": "2026-04-16T03:00:00+00:00"},
+        })
+        pool = ClientPool(MagicMock(), store=store, max_active_clients=2, dispatcher=self._make_dispatcher())
+
+        async def run():
+            await pool.get("s1")
+            await pool.get("s2")
+            pool.set_processing("s1", True)
+            pool.set_processing("s2", True)
+            # 全部 PROCESSING → 无可回收对象
+            assert pool._select_lru_session() is None
+
+        run_async(run())
+
+    @patch("src.pool.ClaudeSDKClient")
+    def test_select_lru_skips_processing_picks_oldest_ready(self, MockClient):
+        """_select_lru_session 跳过 PROCESSING，选 last_active 最早的 READY session"""
+        def make_client(**kwargs):
+            m = MagicMock()
+            m.connect = AsyncMock()
+            m.disconnect = AsyncMock()
+            return m
+        MockClient.side_effect = make_client
+
+        # s1 最早 / s2 居中 / s3 最新
+        store = self._make_store({
+            "s1": {"last_active": "2026-04-16T01:00:00+00:00"},
+            "s2": {"last_active": "2026-04-16T02:00:00+00:00"},
+            "s3": {"last_active": "2026-04-16T03:00:00+00:00"},
+        })
+        pool = ClientPool(MagicMock(), store=store, max_active_clients=3, dispatcher=self._make_dispatcher())
+
+        async def run():
+            await pool.get("s1")
+            await pool.get("s2")
+            await pool.get("s3")
+            # s1（最早）正在 PROCESSING → 应跳过，选 s2
+            pool.set_processing("s1", True)
+            assert pool._select_lru_session() == "s2"
+
+        run_async(run())
+
+    @patch("src.pool.ClaudeSDKClient")
+    def test_eviction_evicts_ready_not_processing(self, MockClient):
+        """pool.get() 满容量时，只回收 READY 的 session，PROCESSING 的保留"""
+        instances: dict = {}
+        def make_client(**kwargs):
+            m = MagicMock()
+            m.connect = AsyncMock()
+            m.disconnect = AsyncMock()
+            instances[len(instances)] = m
+            return m
+        MockClient.side_effect = make_client
+
+        # s1 是最早的（LRU 默认目标），但正在 PROCESSING → 不能被回收
+        # s2 是 READY → 应该被回收
+        store = self._make_store({
+            "s1": {"last_active": "2026-04-16T01:00:00+00:00"},
+            "s2": {"last_active": "2026-04-16T02:00:00+00:00"},
+        })
+        dispatcher = self._make_dispatcher()
+        pool = ClientPool(MagicMock(), store=store, max_active_clients=2, dispatcher=dispatcher)
+
+        async def run():
+            await pool.get("s1")
+            s1_client = pool._clients["s1"]
+            await pool.get("s2")
+            s2_client = pool._clients["s2"]
+
+            # s1 正在 PROCESSING（即使它是 LRU 最早的）
+            pool.set_processing("s1", True)
+
+            # 触发回收：新 session s3 进入
+            await pool.get("s3")
+
+            # s1 必须保留（PROCESSING 不能动），s2 被回收
+            assert "s1" in pool._clients
+            assert "s2" not in pool._clients
+            assert "s3" in pool._clients
+            s1_client.disconnect.assert_not_called()
+            s2_client.disconnect.assert_called_once()
+            dispatcher.cancel_reader.assert_called_with("s2")
+
+        run_async(run())
+
 
 class TestSessionStatus:
     """SessionStatus 状态机测试：CREATED / READY / PROCESSING / NONE"""
