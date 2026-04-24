@@ -85,6 +85,24 @@ def test_new_command_dispatches(mock_reply, mock_rich):
     event = _make_event(content="/new cms翻译 查查这个需求")
     run_async(route_message(pool, event, dispatcher, defaults))
     dispatcher.dispatch.assert_called_once()
+    assert dispatcher.dispatch.call_args[0][0] == "p2p_ou_123_cms翻译"
+
+
+@patch("src.router.resolve_rich_content", return_value=None)
+@patch("src.router.reply_message")
+def test_new_command_dispatches_group_chat(mock_reply, mock_rich):
+    pool, dispatcher, defaults = _make_mocks()
+    event = {
+        "message_id": "om_123",
+        "chat_type": "group",
+        "chat_id": "oc_456",
+        "sender": {"sender_id": {"open_id": "ou_123"}},
+        "content": "/new cms翻译 查查这个需求",
+    }
+    run_async(route_message(pool, event, dispatcher, defaults))
+    dispatcher.dispatch.assert_called_once()
+    # verify group chat session routing works as expected
+    assert dispatcher.dispatch.call_args[0][0] == "group_oc_456_ou_123_cms翻译"
 
 
 @patch("src.router.resolve_rich_content", return_value=None)
@@ -266,6 +284,21 @@ def test_clear_resets_default_if_clearing_default(mock_reply, mock_rich):
     pool.remove = AsyncMock(return_value=True)
     event = _make_event(content="/clear cms")
     run_async(route_message(pool, event, dispatcher, defaults))
+    defaults.set_default.assert_called_once_with("p2p_ou_123", None)
+
+
+@patch("src.router.resolve_rich_content", return_value=None)
+@patch("src.router.reply_message")
+def test_clear_no_arg_clears_current_default(mock_reply, mock_rich):
+    pool, dispatcher, defaults = _make_mocks()
+    defaults.get_default = MagicMock(return_value="cms")
+    pool.list_sessions = MagicMock(return_value={
+        "p2p_ou_123_cms": {"created_at": "2026-04-23T10:00:00"},
+    })
+    pool.remove = AsyncMock(return_value=True)
+    event = _make_event(content="/clear")
+    run_async(route_message(pool, event, dispatcher, defaults))
+    pool.remove.assert_called_once_with("p2p_ou_123_cms")
     defaults.set_default.assert_called_once_with("p2p_ou_123", None)
 
 

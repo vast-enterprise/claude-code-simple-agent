@@ -20,6 +20,9 @@ class DefaultsStore:
 
     def set_default(self, base_session_id: str, suffix: str | None) -> None:
         """设置默认 suffix，None 切回原始会话"""
+        if suffix is None:
+            self.remove_user(base_session_id)
+            return
         data = self._load()
         data[base_session_id] = suffix
         self._write(data)

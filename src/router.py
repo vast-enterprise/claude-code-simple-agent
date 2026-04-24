@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from src.config import BOT_NAME, log_debug
+from src.config import BOT_NAME, log_debug, log_error
 from src.handler import compute_session_id, send_message, session_reader, should_respond
 from src.lark import reply_message, resolve_rich_content
 
@@ -37,6 +37,11 @@ def _extract_suffix_from_session_id(session_id: str, base: str) -> str | None:
     if session_id.startswith(base + "_"):
         return session_id[len(base) + 1 :]
     return None
+
+
+def _is_user_session(session_id: str, base: str) -> bool:
+    """判断 session_id 是否属于该 base 对应的用户（精确匹配，避免跨用户泄露）"""
+    return session_id == base or session_id.startswith(base + "_")
 
 
 async def route_message(
@@ -75,14 +80,14 @@ async def route_message(
         await _handle_switch_command(pool, event, defaults, base_session_id, content)
         return
 
-    # 3. $suffix {message}
-    if content.startswith("$"):
-        await _handle_dollar_prefix(pool, event, dispatcher, base_session_id, content, metrics)
+    # 3. /sessions
+    if content == "/sessions":
+        _handle_sessions_command(pool, event, defaults, base_session_id)
         return
 
-    # 4. /sessions
-    if content == "/sessions":
-        await _handle_sessions_command(pool, event, defaults, base_session_id)
+    # 4. /clear-all
+    if content == "/clear-all":
+        await _handle_clear_all_command(pool, event, dispatcher, defaults, base_session_id)
         return
 
     # 5. /clear {suffix?}
@@ -90,14 +95,14 @@ async def route_message(
         await _handle_clear_command(pool, event, dispatcher, defaults, base_session_id, content)
         return
 
-    # 6. /clear-all
-    if content == "/clear-all":
-        await _handle_clear_all_command(pool, event, dispatcher, defaults, base_session_id)
+    # 6. /interrupt {suffix?}
+    if content.startswith("/interrupt") and (len(content) == 10 or content[10] == " "):
+        await _handle_interrupt_command(pool, event, dispatcher, defaults, base_session_id, content)
         return
 
-    # 7. /interrupt {suffix?}
-    if content.startswith("/interrupt") and (len(content) == 10 or content[10] == " "):
-        await _handle_interrupt_command(pool, event, dispatcher, base_session_id, content)
+    # 7. $suffix {message}
+    if content.startswith("$"):
+        await _handle_dollar_prefix(pool, event, dispatcher, base_session_id, content, metrics)
         return
 
     # 8. 普通消息或其他 slash cmd → 默认 session
@@ -185,13 +190,13 @@ async def _dispatch_to_session(pool, event, dispatcher, session_id, content, suf
     )
 
 
-async def _handle_sessions_command(pool, event, defaults, base):
+def _handle_sessions_command(pool, event, defaults, base):
     """处理 /sessions：列出当前用户的所有会话"""
     all_sessions = pool.list_sessions()
     user_sessions = [
         (sid, data)
         for sid, data in all_sessions.items()
-        if sid.startswith(base)
+        if _is_user_session(sid, base)
     ]
 
     if not user_sessions:
@@ -254,7 +259,7 @@ async def _handle_clear_all_command(pool, event, dispatcher, defaults, base):
     all_sessions = pool.list_sessions()
     user_sessions = [
         sid for sid in all_sessions.keys()
-        if sid.startswith(base)
+        if _is_user_session(sid, base)
     ]
 
     if not user_sessions:
@@ -277,10 +282,14 @@ async def _handle_clear_all_command(pool, event, dispatcher, defaults, base):
     reply_message(event["message_id"], f"已清除 {removed_count} 个会话。")
 
 
-async def _handle_interrupt_command(pool, event, dispatcher, base, content):
+async def _handle_interrupt_command(pool, event, dispatcher, defaults, base, content):
     """处理 /interrupt {suffix?}：中断指定会话或当前默认会话的执行"""
     parts = content.split(None, 1)
     suffix = parts[1] if len(parts) > 1 else None
+
+    # 如果没有指定 suffix，使用当前默认会话
+    if suffix is None:
+        suffix = defaults.get_default(base)
 
     target_session_id = _compute_full_session_id(base, suffix)
 
