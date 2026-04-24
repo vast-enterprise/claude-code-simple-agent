@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from src.router import (
+    BOT_MENTION,
     _compute_base_session_id,
     _compute_full_session_id,
     _extract_suffix_from_session_id,
@@ -92,12 +93,15 @@ def test_new_command_dispatches(mock_reply, mock_rich):
 @patch("src.router.reply_message")
 def test_new_command_dispatches_group_chat(mock_reply, mock_rich):
     pool, dispatcher, defaults = _make_mocks()
+    # group 场景必须 @bot 才会触发 should_respond；sender_id 是顶层字段，
+    # 对应 lark-cli 事件的 flat shape（非嵌套 sender.sender_id.open_id）。
     event = {
         "message_id": "om_123",
         "chat_type": "group",
         "chat_id": "oc_456",
-        "sender": {"sender_id": {"open_id": "ou_123"}},
-        "content": "/new cms翻译 查查这个需求",
+        "sender_id": "ou_123",
+        "sender_type": "user",
+        "content": f"{BOT_MENTION} /new cms翻译 查查这个需求",
     }
     run_async(route_message(pool, event, dispatcher, defaults))
     dispatcher.dispatch.assert_called_once()
