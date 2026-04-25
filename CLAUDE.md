@@ -91,6 +91,8 @@ R1-R4 / B1-B2 每一条通知都是把决定权交回用户。scrum-master 在 B
 
 查代码 / 仓库结构 → **developer**；查 bug 根因 / 错误还原 → **diagnose**；查飞书表格 / 历史需求 / Bug 列表 → **scrum-master**；查 CMS 内容 → **developer**；生产状态 / pod 日志 → **release**。单点查询无副作用，直接派。
 
+查/盘点 owner 自己的需求 session 状态、跨 session 主动派消息推进停滞需求 → 加载 `tripo-dispatch` 我自己 curl localhost:8420 控制平面，**不派 specialist**。GET /sessions 只读直接做；POST /create / /message 有副作用，派发前 AskUserQuestion 列计划等用户"好"。
+
 ### C 分支：方案 / 选型咨询
 
 有 PRD / review.md → 派 **architect** 出方案；没有 → 先派 **planner** 澄清。architect 出方案后 AskUserQuestion 让用户决策是否采纳；采纳后进 A 分支。
@@ -134,6 +136,7 @@ AskUserQuestion 问分类，不自己选。
 | `tripo-requirement` | 需求开发全流程（10 步：接收→录入→评审→执行→技评→开发→PR→闭环→验收→上线） |
 | `tripo-bugfix` | 缺陷修复全流程（8 步：接收→录入→调查→修复→PR→闭环→验收→上线） |
 | `tripo-release` | 前端发版（staging 部署 / production 发车上线） |
+| `tripo-dispatch` | 控制平面派发：查 owner 所有 session 状态、跨 session 创建/激活会话主动推进停滞需求（HTTP localhost:8420，三端点 GET /sessions/{owner_id} / POST /create / POST /message） |
 
 ### 方法论层（specialist 用，我不加载）
 
