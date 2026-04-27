@@ -8,7 +8,7 @@
 ## 2. Core Components
 
 - `src/main.py` (`main`, `start_event_listener`, `_read_or_shutdown`, `_crash_hook`): 程序入口，负责事件循环、lark-cli 进程组管理、asyncio-native 信号处理、ClientPool + SessionDispatcher + MetricsCollector + SessionStore + DefaultsStore + HTTP server 集成、崩溃/断连通知。
-- `src/router.py` (`route_message`): 统一命令路由层，从 main.py 调用。解析 `/new`、`/switch`、`/sessions`、`/clear`、`/clear-all`、`/interrupt` 命令，以及 `$suffix` 前缀路由。所有命令处理逻辑集中于此，按需调用 handler 的 send_message/session_reader。
+- `src/router.py` (`route_message`): 统一命令路由层，从 main.py 调用。解析 `/new`、`/switch`、`/sessions`、`/clear`、`/clear-all`、`/interrupt` 命令，以及 `$suffix` 前缀路由。所有命令处理逻辑集中于此，按需调用 handler 的 send_message/session_reader。`extract_suffix_from_session_id` 已暴露为公开 helper，被 `src/server.py` 控制平面 POST `/message` 路径复用，做 body `suffix` 缺失时的 fallback 反推。
 - `src/defaults_store.py` (`DefaultsStore`): per-user 默认会话 suffix 持久化，存储在 `data/session_defaults.json`。支持 get/set/remove 操作，原子写入保证数据安全。
 - `src/pool.py` (`ClientPool`, `SessionStatus`): per-session 独立 `ClaudeSDKClient` 池 + per-session FIFO 消息队列 + per-session 状态机。惰性创建，per-session `asyncio.Lock` 防并发重复创建，集成 `SessionStore` 持久化。`get()` 创建新 client 时自动检查 store 中的 `claude_session_id`，若存在则通过 `dataclasses.replace(options, resume=stored_sid)` 实现重启后 session 恢复。FIFO 队列 (`_pending`) 用于对齐 query → response → 飞书回复映射。`SessionStatus` 枚举 + `_processing` 字典 + `get_status()` / `set_processing()` 暴露状态机观测与写入入口；`_select_lru_session()` 跳过 PROCESSING 候选，保证正在执行的 session 不被 LRU 回收。详见 3.4 节。
 - `src/handler.py` (`should_respond`, `send_message`, `session_reader`, `compute_session_id`, `_ensure_display_names`, `_build_prompt`, `_is_internal_message`, `_format_with_suffix`): 消息过滤、session ID 计算、名字解析、prompt 构建、suffix 回复前缀、控制面虚构消息 ID 识别 + 二选一分流（reply / send_to_target）。瘦身为纯执行层，`send_message` 接收 router 计算好的 session_id + content，不处理命令路由。`_build_prompt` 构造带发送者上下文的 prompt（角色·名字 + open_id + 场景·chat_id），供 Claude 既能识别发送者身份又能拿到 ID 用于后续 API 交互。`send_message` 是发送端（prompt 构建 + 非阻塞 query + `set_processing(True)` + 入队 FIFO），`session_reader` 是接收端（持续读取响应 + 二选一回复 + 管理 reaction 生命周期 + `ResultMessage` / `CancelledError` / 普通异常三路径下的 `set_processing(False)`）。`_is_internal_message` 识别 `internal-*` 前缀的虚构 message_id：在 reaction 路径上守卫 `add_reaction` / `remove_reaction`（虚构 ID 加不了表情），在 ResultMessage 处理段切换分流目标——`internal-*` ⇒ `send_to_target(OWNER_ID, text)` 主动 send 到 owner，真实 msg_id ⇒ `reply_message(mid, text)` quote-reply。`_format_with_suffix` 抽出 `来自 {suffix} 的回复：\n` 前缀拼装逻辑，`ResultMessage` 处理段一次性生成 `prefixed_texts`，两条互斥分支共用同一份带前缀文本。
@@ -211,6 +211,8 @@ lark-cli stdout
 | GET `/sessions/{owner_id}` (`_handle_sessions_by_owner`) | 不校验路径参数 | 仅按 `_owner_matches` 过滤响应 |
 
 **Suffix 白名单：** `_SUFFIX_PATTERN = re.compile(r"[A-Za-z0-9_\-\.]+")` (`src/server.py`)。空格、`$`、`/` 等字符被拒绝，避免与飞书侧 `/new {suffix}` / `$suffix` 命令解析冲突。
+
+**POST `/message` 的 `suffix` fallback：** body 未传 `suffix` 时，server 从 `session_id` 自动反推（复用 `src/router.extract_suffix_from_session_id`，base = `p2p_{OWNER_ID}`，控制面只服务 owner p2p）。这样飞书直发的 `$suffix` 路径（router 反推）与控制面派发路径（server 反推）对 reader 表现一致——reader 都拿得到 suffix → 回报带 `来自 {suffix} 的回复：\n` 前缀（见 3.5 节规则）。显式传 body `suffix` 仍然 override（body 优先于 session_id 反推）。
 
 **虚拟事件结构（控制面 → `send_message` 的桥）：**
 
