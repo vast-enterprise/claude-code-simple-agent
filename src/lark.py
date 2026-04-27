@@ -387,18 +387,6 @@ def _prepare_markdown_text(text: str) -> str:
     return _convert_md_tables(text)
 
 
-def _resolve_receive_id_type(target_id: str) -> str:
-    """根据 target_id 前缀判断 receive_id_type。
-
-    - ou_* → open_id（飞书用户 open_id）
-    - oc_* → chat_id（飞书群聊 chat_id）
-    - 其他 → open_id（兜底）
-    """
-    if target_id.startswith("oc_"):
-        return "chat_id"
-    return "open_id"
-
-
 def reply_message(message_id: str, text: str):
     """通过 lark-cli 回复飞书消息（markdown 富文本格式）"""
     text = _prepare_markdown_text(text)
@@ -445,18 +433,15 @@ def send_to_target(target_id: str, text: str):
     不做 plain text 降级——主动 send 失败就失败，再降级反而干扰核心状态机。
     """
     text = _prepare_markdown_text(text)
-    receive_id_type = _resolve_receive_id_type(target_id)
-    params = json.dumps({"receive_id_type": receive_id_type})
-    data = json.dumps({
-        "receive_id": target_id,
-        "msg_type": "text",
-        "content": json.dumps({"text": text}),
-    })
+    if target_id.startswith("oc_"):
+        target_flag = ["--chat-id", target_id]
+    else:  # ou_* 或兜底
+        target_flag = ["--user-id", target_id]
     result = subprocess.run(
         [
-            "lark-cli", "im", "messages", "create",
-            "--params", params,
-            "--data", data,
+            "lark-cli", "im", "+messages-send",
+            *target_flag,
+            "--text", text,
             "--as", "bot",
         ],
         capture_output=True, text=True, timeout=15,

@@ -340,28 +340,35 @@ class TestSendToTarget:
 
     @patch("src.lark.subprocess.run")
     def test_send_to_target_open_id(self, mock_run):
-        """target_id=ou_xxx → receive_id_type=open_id"""
+        """target_id=ou_xxx → 使用 --user-id ou_xxx（+messages-send）"""
         mock_run.return_value = MagicMock(returncode=0)
         send_to_target("ou_xxx", "hello")
         mock_run.assert_called_once()
         args = mock_run.call_args[0][0]
-        # 找 --params 参数值
-        idx = args.index("--params")
-        params_str = args[idx + 1]
-        params = json.loads(params_str)
-        assert params.get("receive_id_type") == "open_id"
+        # 必须使用正确子命令
+        assert "+messages-send" in args
+        # 用户 ID 通过 --user-id 传递，不是 --params
+        assert "--user-id" in args
+        idx = args.index("--user-id")
+        assert args[idx + 1] == "ou_xxx"
+        # 不应含旧的 --params 参数
+        assert "--params" not in args
 
     @patch("src.lark.subprocess.run")
     def test_send_to_target_chat_id(self, mock_run):
-        """target_id=oc_xxx → receive_id_type=chat_id"""
+        """target_id=oc_xxx → 使用 --chat-id oc_xxx（+messages-send）"""
         mock_run.return_value = MagicMock(returncode=0)
         send_to_target("oc_xxx", "hello")
         mock_run.assert_called_once()
         args = mock_run.call_args[0][0]
-        idx = args.index("--params")
-        params_str = args[idx + 1]
-        params = json.loads(params_str)
-        assert params.get("receive_id_type") == "chat_id"
+        # 必须使用正确子命令
+        assert "+messages-send" in args
+        # 群 chat_id 通过 --chat-id 传递
+        assert "--chat-id" in args
+        idx = args.index("--chat-id")
+        assert args[idx + 1] == "oc_xxx"
+        # 不应含旧的 --params 参数
+        assert "--params" not in args
 
     @patch("src.lark.subprocess.run")
     def test_send_to_target_truncates_long_text(self, mock_run):
@@ -370,11 +377,9 @@ class TestSendToTarget:
         send_to_target("ou_xxx", "x" * 20000)
         mock_run.assert_called_once()
         args = mock_run.call_args[0][0]
-        idx = args.index("--data")
-        data_str = args[idx + 1]
-        data = json.loads(data_str)
-        content = json.loads(data["content"])
-        sent_text = content["text"]
+        # 文本通过 --text 参数传递
+        idx = args.index("--text")
+        sent_text = args[idx + 1]
         assert len(sent_text) < 15100
         assert "截断" in sent_text
 
