@@ -11,12 +11,12 @@
 - `src/router.py` (`route_message`): 统一命令路由层，从 main.py 调用。解析 `/new`、`/switch`、`/sessions`、`/clear`、`/clear-all`、`/interrupt` 命令，以及 `$suffix` 前缀路由。所有命令处理逻辑集中于此，按需调用 handler 的 send_message/session_reader。
 - `src/defaults_store.py` (`DefaultsStore`): per-user 默认会话 suffix 持久化，存储在 `data/session_defaults.json`。支持 get/set/remove 操作，原子写入保证数据安全。
 - `src/pool.py` (`ClientPool`, `SessionStatus`): per-session 独立 `ClaudeSDKClient` 池 + per-session FIFO 消息队列 + per-session 状态机。惰性创建，per-session `asyncio.Lock` 防并发重复创建，集成 `SessionStore` 持久化。`get()` 创建新 client 时自动检查 store 中的 `claude_session_id`，若存在则通过 `dataclasses.replace(options, resume=stored_sid)` 实现重启后 session 恢复。FIFO 队列 (`_pending`) 用于对齐 query → response → 飞书回复映射。`SessionStatus` 枚举 + `_processing` 字典 + `get_status()` / `set_processing()` 暴露状态机观测与写入入口；`_select_lru_session()` 跳过 PROCESSING 候选，保证正在执行的 session 不被 LRU 回收。详见 3.4 节。
-- `src/handler.py` (`should_respond`, `send_message`, `session_reader`, `compute_session_id`, `_ensure_display_names`, `_build_prompt`, `_is_internal_message`): 消息过滤、session ID 计算、名字解析、prompt 构建、suffix 回复前缀、控制面虚构消息 ID 识别。瘦身为纯执行层，`send_message` 接收 router 计算好的 session_id + content，不处理命令路由。`_build_prompt` 构造带发送者上下文的 prompt（角色·名字 + open_id + 场景·chat_id），供 Claude 既能识别发送者身份又能拿到 ID 用于后续 API 交互。`send_message` 是发送端（prompt 构建 + 非阻塞 query + `set_processing(True)` + 入队 FIFO），`session_reader` 是接收端（持续读取响应 + 回复飞书 + 管理 reaction 生命周期 + `ResultMessage` / `CancelledError` / 普通异常三路径下的 `set_processing(False)`）。`_is_internal_message` 识别 `internal-*` 前缀的虚构 message_id，使 `session_reader` 对控制面虚拟事件跳过所有 lark 副作用（`add_reaction` / `remove_reaction` / `reply_message`）但保留核心状态机推进。
+- `src/handler.py` (`should_respond`, `send_message`, `session_reader`, `compute_session_id`, `_ensure_display_names`, `_build_prompt`, `_is_internal_message`, `_format_with_suffix`): 消息过滤、session ID 计算、名字解析、prompt 构建、suffix 回复前缀、控制面虚构消息 ID 识别、`echo_chat_id` 主动回传。瘦身为纯执行层，`send_message` 接收 router 计算好的 session_id + content，不处理命令路由。`_build_prompt` 构造带发送者上下文的 prompt（角色·名字 + open_id + 场景·chat_id），供 Claude 既能识别发送者身份又能拿到 ID 用于后续 API 交互。`send_message` 是发送端（prompt 构建 + 非阻塞 query + `set_processing(True)` + 入队 FIFO），`session_reader` 是接收端（持续读取响应 + 回复飞书 + 管理 reaction 生命周期 + `ResultMessage` / `CancelledError` / 普通异常三路径下的 `set_processing(False)`）。`_is_internal_message` 识别 `internal-*` 前缀的虚构 message_id，使 `session_reader` 对控制面虚拟事件跳过所有 lark 副作用（`add_reaction` / `remove_reaction` / `reply_message`）但保留核心状态机推进。`_format_with_suffix` 抽出 `来自 {suffix} 的回复：\n` 前缀拼装逻辑，`ResultMessage` 处理段一次性生成 `prefixed_texts`，reply 分支与 echo 分支共用同一份带前缀文本。
 - `src/session.py` (`SessionDispatcher`): 调度器，直接 await send_coro（非阻塞），首次消息时启动 per-session reader task。Reader task 随 session 生命周期存在。
 - `src/permissions.py` (`permission_gate`, `set_sender`, `get_sender`, `_current_sender_id`): 工具调用权限门控回调，通过 `contextvars.ContextVar` 传递 sender 身份，支持并发隔离。
-- `src/lark.py` (`add_reaction`, `remove_reaction`, `reply_message`, `_reply_plain_text`, `resolve_user_name`, `resolve_chat_name`, `resolve_rich_content`, `download_message_image`, `_get_message_image_key`, `_resolve_inline_images`): 飞书交互叶节点 + 富消息解析 + 图片下载模块。API 交互全部为同步 `subprocess.run` 调用 `lark-cli`。消息回复使用 markdown 格式（`lark-cli im +messages-reply --markdown`），失败自动降级纯文本。富消息解析将 merge_forward/image/file/audio/video/sticker/media 转为可读文本，图片类消息自动下载到 `data/images/` 并返回文件路径引用。详见 `/llmdoc/architecture/lark-interaction.md` 3.2-3.6 节。
+- `src/lark.py` (`add_reaction`, `remove_reaction`, `reply_message`, `_reply_plain_text`, `send_to_target`, `_prepare_markdown_text`, `_resolve_receive_id_type`, `resolve_user_name`, `resolve_chat_name`, `resolve_rich_content`, `download_message_image`, `_get_message_image_key`, `_resolve_inline_images`): 飞书交互叶节点 + 富消息解析 + 图片下载模块。API 交互全部为同步 `subprocess.run` 调用 `lark-cli`。消息回复使用 markdown 格式（`lark-cli im +messages-reply --markdown`），失败自动降级纯文本。`send_to_target` 是 echo 路径的主动发送通道（`lark-cli im messages create`），按目标 ID 前缀（`ou_*` → `open_id`、`oc_*` → `chat_id`，由 `_resolve_receive_id_type` 判定）自动选择 `receive_id_type`，失败仅 `log_error` 不降级，避免干扰核心状态机。`_prepare_markdown_text` 抽出截断（>15000 字符）+ `_convert_md_tables` 表格预处理逻辑，`reply_message` 与 `send_to_target` 共用。富消息解析将 merge_forward/image/file/audio/video/sticker/media 转为可读文本，图片类消息自动下载到 `data/images/` 并返回文件路径引用。详见 `/llmdoc/architecture/lark-interaction.md` 3.2-3.6 节。
 - `src/config.py` (`ROOT`, `CONFIG`, `PERSONA`, `OWNER_ID`, `NOTIFY_CONFIG`, `DISALLOWED_TOOLS`, `log_debug`, `log_info`, `log_error`): 配置加载叶节点 + 结构化日志系统。
-- 可观测性模块（`notify.py`, `store.py`, `metrics.py`, `server.py`）：详见 `/llmdoc/architecture/observability.md`. `server.py` 还承担 HTTP 调度控制面（非 `/api/*` 命名空间），详见 3.6 节。
+- 可观测性模块（`notify.py`, `store.py`, `metrics.py`, `server.py`）：详见 `/llmdoc/architecture/observability.md`. `server.py` 还承担 HTTP 调度控制面（非 `/api/*` 命名空间），含 `_parse_echo_chat_id` helper 处理 `echo_chat_id` 字段的"缺省 / 显式 str / 显式空串关闭"三态语义，详见 3.6 节。
 
 ## 3. Execution Flow (LLM Retrieval Map)
 
@@ -193,8 +193,8 @@ lark-cli stdout
 | 方法 + 路径 | 职责 | 主要状态码 |
 |---|---|---|
 | `GET /sessions/{owner_id}` | 列出 owner 名下所有 session 及 `status`、`task_id`、`task_type`、`last_active`、`pending_count` | 200 |
-| `POST /sessions/{owner_id}/create` | 创建 `p2p_{owner_id}_{suffix}` session + 写入 task 元数据 + dispatch 首条消息 | 200 / 400 / 409（已存在）/ 503（dispatcher 缺失） |
-| `POST /sessions/{session_id}/message` | 向已存在 session 追加一条消息 | 200 / 400 / 404（不存在）/ 409（PROCESSING）/ 503 |
+| `POST /sessions/{owner_id}/create` | 创建 `p2p_{owner_id}_{suffix}` session + 写入 task 元数据 + 可选 `echo_chat_id` 持久化到 `SessionStore` + dispatch 首条消息 | 200 / 400 / 409（已存在）/ 503（dispatcher 缺失） |
+| `POST /sessions/{session_id}/message` | 向已存在 session 追加一条消息 + 可选 `echo_chat_id` 更新 `SessionStore` | 200 / 400 / 404（不存在）/ 409（PROCESSING）/ 503 |
 
 **Owner 归属判定：** `_owner_matches(session_id, owner_id)` (`src/server.py`) 用**精确段匹配**而非朴素 `startswith`，避免 `p2p_ou_test` 意外命中 `p2p_ou_testing_*` 导致跨 owner 泄露。规则：
 - p2p：`sid == f"p2p_{owner_id}"` 或 `sid.startswith(f"p2p_{owner_id}_")`。
@@ -217,9 +217,33 @@ lark-cli stdout
 
 派发镜像 `src/router.py::_dispatch_to_session` 的调用模式：`dispatcher.dispatch(session_id, send_message(...), reader_factory=lambda: session_reader(...))`。`_create_app(pool, metrics, *, dispatcher=None)` 和 `start_server(..., *, dispatcher=None, port=8420)` 的 `dispatcher` 参数由 `src/main.py` 在启动时注入；测试场景或未注入时，两个 POST 端点返回 503。
 
+**`echo_chat_id` 字段（子 session ResultMessage 主动回传给 owner）：**
+
+控制面派发的子 session 在产出 `ResultMessage` 时，除了沿原 `internal-*` message_id 路径推进核心状态机，还可以**主动 send** 一份回复到 owner 的真实飞书目标（chat_id 或 open_id）。开关由 `echo_chat_id` 字段控制，三态语义由 `_parse_echo_chat_id` (`src/server.py`) 实现：
+
+| 端点 | 字段缺失 | 显式非空 str | 显式 `""` | 非 str |
+|---|---|---|---|---|
+| POST `/create` | 默认写入 `OWNER_ID`（来自 `src.config.OWNER_ID`） | 覆盖写入 store | 关闭 echo（写入空串） | 400 |
+| POST `/message` | 不覆盖 store 中已有值 | 更新 store | 关闭 echo（写入空串） | 400 |
+
+- **存储位置：** `SessionStore` 的 per-session 元数据（`echo_chat_id` 键），与 `claude_session_id` / `task_id` 等并列，重启后自动 resume。
+- **消费位置：** `session_reader` 在 `ResultMessage` 处理段（`reply` 分支之后）从 `pool._store.load_all().get(session_id, {}).get("echo_chat_id", "")` 读出 target；非空才调 `send_to_target`。
+- **触发面：** 仅 `ResultMessage` 阶段触发。中间 `AssistantMessage` turn、`except Exception`、`except asyncio.CancelledError` 路径**均不**触发 echo——避免半成品回复或取消事件污染 owner 单聊。
+- **suffix 前缀：** echo 路径与 reply 路径共用 `_format_with_suffix` 拼装结果（一次性生成 `prefixed_texts`），所以 echo 也带 `来自 {suffix} 的回复：\n` 前缀（见 3.5 节规则）。
+- **失败语义：** `send_to_target` 失败仅 `log_error`，handler 内再用 `try/except` 包一层兜底，echo 失败不会破坏 reply 分支或核心状态机。
+
 **核心不变式：`internal-*` message_id ⇒ 跳过 lark 副作用。**
 
-控制面与 `session_reader` 之间有一条契约：控制面负责写入 `internal-<uuid>` 形式的虚构 message_id，`_is_internal_message` (`src/handler.py`) 在 `session_reader` 内守卫所有 lark-cli 子进程调用（`add_reaction`、`remove_reaction`、`reply_message`，包括 `except Exception` 分支里的 `remove_reaction`）。被屏蔽的只是用户侧可见的飞书反馈——核心状态机（`dequeue_message` / `set_processing` / `save_claude_session_id` / `metrics.record_message`）仍照常推进。没有这条契约，每次控制面派发的 Claude 响应都会触发 2-3 次 `lark-cli` subprocess 针对不存在的 message_id 失败，严重污染日志和运维噪音。
+控制面与 `session_reader` 之间有一条契约：控制面负责写入 `internal-<uuid>` 形式的虚构 message_id，`_is_internal_message` (`src/handler.py`) 在 `session_reader` 内守卫所有挂在该 message_id 上的 lark-cli 子进程调用（`add_reaction`、`remove_reaction`、`reply_message`，包括 `except Exception` 分支里的 `remove_reaction`）。被屏蔽的只是用户侧可见的飞书反馈——核心状态机（`dequeue_message` / `set_processing` / `save_claude_session_id` / `metrics.record_message`）仍照常推进。没有这条契约，每次控制面派发的 Claude 响应都会触发 2-3 次 `lark-cli` subprocess 针对不存在的 message_id 失败，严重污染日志和运维噪音。
+
+**`internal-*` 守卫与 echo 路径的解耦：** 守卫保护的是"对虚构 message_id 调 lark-cli"的路径；`send_to_target` 直接发到真实 chat_id / open_id，不依赖任何 message_id，因此**不被守卫屏蔽**也**不需要**被守卫屏蔽。两条路径并存、各管一面：
+
+| 路径 | 受 `internal-*` 守卫影响？ | 触发条件 |
+|---|---|---|
+| `reply_message` / `add_reaction` / `remove_reaction` | 是（`internal-*` 时跳过） | `current_msg` 非空（处理飞书 FIFO 队头时） |
+| `send_to_target`（echo 分支） | 否 | `pool._store` 里 `echo_chat_id` 非空，且当前正处于 `ResultMessage` 处理段 |
+
+这一拆分让 `internal-*` 控制面派发既能享受"飞书副作用静默"，又能把回复主动回传给 owner——两个目标各自由 `_is_internal_message` 守卫与 `echo_chat_id` 字段独立调控。
 
 **TOCTOU 语义（调用方必须自行串行化）：** 控制面端点的校验和派发是**非原子**的；pool 层的 per-session lock 只防重复建 client，不防并发 FIFO 入队：
 
@@ -298,3 +322,4 @@ lark-cli stdout
 - **SessionStatus 状态机单一事实来源:** `_clients` + `_processing` + `store` 三者共同决定状态，而非引入单独的状态字段——这让状态查询与底层资源永远同步，消除"状态说 READY，但 client 已被 evict"这类不一致。`_processing` 由 handler 读写，pool 只做清理兜底；PROCESSING 的 `True` / `False` 配对是 handler 的责任（含 `asyncio.CancelledError` 专门分支），而不是 pool 的。
 - **LRU 跳过 PROCESSING 而非强制上限:** `_select_lru_session` 显式跳过 PROCESSING 候选，允许池临时超出 `max_active_clients`。回收正在 query 的 session 会丢失本轮响应，代价高于短暂超限——宁可多留一个 client 也不破坏正在进行的对话。
 - **HTTP 调度控制面与飞书侧解耦:** 控制面端点不走飞书事件链（不经 `route_message` / `should_respond`），但复用同一套 `send_message` + `session_reader` + FIFO 路径。契约通过 `internal-*` 前缀 message_id + `_is_internal_message` 守卫建立：控制面负责写虚构 ID，handler 负责跳过 lark 副作用。这样控制面可以驱动状态机推进（dequeue / metrics / claude_session_id 持久化照常），但不对不存在的 message_id 发 lark-cli 子进程。端点放在 `/sessions/*`（非 `/api/*`）命名空间，与 Dashboard 明确隔离。
+- **`echo_chat_id` 与 `internal-*` 守卫并存的契约:** 守卫的语义被严格限定为"屏蔽对虚构 message_id 的 lark-cli 调用"，而 `echo_chat_id` 走的是 `send_to_target` 主动 send 路径，发到真实 chat_id / open_id，根本不挂在 message_id 上。两条路径在 handler 里并列存在但互不依赖：reply 分支被 `_is_internal_message` 守卫包住，echo 分支由 `echo_chat_id` 是否非空控制。把 echo 单独抽出来而不是塞进守卫之内，是为了让"消息可达 owner"这件事独立于"是否有真实 message_id"——控制面派发的子 session 即便完全没有飞书消息上下文，也能把 ResultMessage 主动推回 owner；同时反向也成立——飞书侧普通会话即便没设 `echo_chat_id` 也照常 reply。两者各管一面，避免后续误把 echo 也并进守卫导致控制面派发"静默失踪"。
