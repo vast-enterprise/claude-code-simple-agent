@@ -616,10 +616,10 @@ class TestSessionReaderEcho:
     @patch("src.handler.reply_message")
     @patch("src.handler.remove_reaction")
     @patch("src.handler.add_reaction", return_value="r_abc")
-    def test_reader_no_echo_when_target_missing(
+    def test_reader_echoes_to_owner_when_target_missing(
         self, mock_add, mock_remove, mock_reply, mock_send_to_target
     ):
-        """store 里没有 echo_chat_id 字段（旧 session）→ send_to_target 不调"""
+        """store 里没有 echo_chat_id 字段（旧 session）→ 默认回传 OWNER_ID"""
         session_id = "p2p_ou_owner_REQ-3"
         store_data = {session_id: {}}  # 无 echo_chat_id 键
         pending = {"message_id": "internal-uuid2", "content": "hi"}
@@ -627,7 +627,9 @@ class TestSessionReaderEcho:
             self._result_messages(), pending, store_data
         )
         run_async(session_reader(session_id, pool))
-        mock_send_to_target.assert_not_called()
+        mock_send_to_target.assert_called_once()
+        call_args = mock_send_to_target.call_args
+        assert call_args.args[0] == OWNER_ID
 
     @patch("src.handler.send_to_target")
     @patch("src.handler.reply_message")

@@ -263,9 +263,13 @@ async def session_reader(
                                 reply_message(mid, text)
 
                         # echo 分支：ResultMessage 时回传到 echo_chat_id（不受 internal 守卫限制）
-                        echo_target = ""
+                        # 缺字段 → 默认 OWNER_ID（dispatch 仅 owner 可用，echo 永远发回 owner 自己）
+                        # 显式 "" → 关闭 echo
+                        echo_target = OWNER_ID
                         if pool._store:
-                            echo_target = pool._store.load_all().get(session_id, {}).get("echo_chat_id", "")
+                            meta = pool._store.load_all().get(session_id, {})
+                            if "echo_chat_id" in meta:        # 显式存了（含 ""）
+                                echo_target = meta["echo_chat_id"]
                         if echo_target:
                             for text in prefixed_texts:
                                 try:
