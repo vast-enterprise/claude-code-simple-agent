@@ -219,15 +219,27 @@ lark-cli stdout
 
 **`echo_chat_id` 字段（子 session ResultMessage 主动回传给 owner）：**
 
-控制面派发的子 session 在产出 `ResultMessage` 时，除了沿原 `internal-*` message_id 路径推进核心状态机，还可以**主动 send** 一份回复到 owner 的真实飞书目标（chat_id 或 open_id）。开关由 `echo_chat_id` 字段控制，三态语义由 `_parse_echo_chat_id` (`src/server.py`) 实现：
+控制面派发的子 session 在产出 `ResultMessage` 时，除了沿原 `internal-*` message_id 路径推进核心状态机，还可以**主动 send** 一份回复到 owner 的真实飞书目标（chat_id 或 open_id）。开关由 `echo_chat_id` 字段控制，分两侧管理：server 侧 `_parse_echo_chat_id` (`src/server.py`) 决定**写入 store 时**的三态，reader 侧 `session_reader` (`src/handler.py`) 决定**消费 store 时**的三态。两侧默认值都是 `OWNER_ID`——dispatch 控制面仅 owner 可用（绑回环 + 仅主 agent 调），echo 永远发回 owner 自己，没有外溢风险。
+
+**Server 侧写入语义（`_parse_echo_chat_id`，未变）：**
 
 | 端点 | 字段缺失 | 显式非空 str | 显式 `""` | 非 str |
 |---|---|---|---|---|
 | POST `/create` | 默认写入 `OWNER_ID`（来自 `src.config.OWNER_ID`） | 覆盖写入 store | 关闭 echo（写入空串） | 400 |
 | POST `/message` | 不覆盖 store 中已有值 | 更新 store | 关闭 echo（写入空串） | 400 |
 
+**Reader 侧消费语义（`session_reader` 的三态，commit `3b9237e` 后）：** 先把 `echo_target` 初始化为 `OWNER_ID`，再用"`echo_chat_id` 是否在 meta 里**显式存在**"判断是否覆盖；只有 `echo_target` 非空才调 `send_to_target`。
+
+| store 状态 | `echo_target` | 行为 |
+|---|---|---|
+| 没有 `echo_chat_id` 字段（老 session / 字段引入前已存在） | `OWNER_ID` | echo 到 owner 飞书私聊 |
+| 显式 `""` | `""` | 关闭 echo |
+| 显式具体值（chat_id / open_id） | 该值 | 发到该目标 |
+
+新老路径在 reader 里收敛到一致语义：POST `/create` 不传 `echo_chat_id` 时 server 主动写 `OWNER_ID` 到 store → reader 读到具体值 → echo 到 owner；老 session 在字段引入前创建（store 里没该键）→ reader 走"缺字段 → `OWNER_ID`"默认分支 → 同样 echo 到 owner。两种路径汇合于"echo 发回 owner"，**显式 `""` 是唯一的关闭通道**。
+
 - **存储位置：** `SessionStore` 的 per-session 元数据（`echo_chat_id` 键），与 `claude_session_id` / `task_id` 等并列，重启后自动 resume。
-- **消费位置：** `session_reader` 在 `ResultMessage` 处理段（`reply` 分支之后）从 `pool._store.load_all().get(session_id, {}).get("echo_chat_id", "")` 读出 target；非空才调 `send_to_target`。
+- **消费位置：** `session_reader` 在 `ResultMessage` 处理段（`reply` 分支之后）按上表三态语义计算 `echo_target`；非空才调 `send_to_target`。代码上等价于"`echo_target = OWNER_ID`；若 `pool._store` 存在且 meta 里 `"echo_chat_id" in meta`，则用 `meta["echo_chat_id"]` 覆盖"。
 - **触发面：** 仅 `ResultMessage` 阶段触发。中间 `AssistantMessage` turn、`except Exception`、`except asyncio.CancelledError` 路径**均不**触发 echo——避免半成品回复或取消事件污染 owner 单聊。
 - **suffix 前缀：** echo 路径与 reply 路径共用 `_format_with_suffix` 拼装结果（一次性生成 `prefixed_texts`），所以 echo 也带 `来自 {suffix} 的回复：\n` 前缀（见 3.5 节规则）。
 - **失败语义：** `send_to_target` 失败仅 `log_error`，handler 内再用 `try/except` 包一层兜底，echo 失败不会破坏 reply 分支或核心状态机。
@@ -241,7 +253,7 @@ lark-cli stdout
 | 路径 | 受 `internal-*` 守卫影响？ | 触发条件 |
 |---|---|---|
 | `reply_message` / `add_reaction` / `remove_reaction` | 是（`internal-*` 时跳过） | `current_msg` 非空（处理飞书 FIFO 队头时） |
-| `send_to_target`（echo 分支） | 否 | `pool._store` 里 `echo_chat_id` 非空，且当前正处于 `ResultMessage` 处理段 |
+| `send_to_target`（echo 分支） | 否 | `echo_target` 非空（缺字段默认 `OWNER_ID`、显式具体值或显式 `""` 三态见上表），且当前正处于 `ResultMessage` 处理段 |
 
 这一拆分让 `internal-*` 控制面派发既能享受"飞书副作用静默"，又能把回复主动回传给 owner——两个目标各自由 `_is_internal_message` 守卫与 `echo_chat_id` 字段独立调控。
 
@@ -322,4 +334,5 @@ lark-cli stdout
 - **SessionStatus 状态机单一事实来源:** `_clients` + `_processing` + `store` 三者共同决定状态，而非引入单独的状态字段——这让状态查询与底层资源永远同步，消除"状态说 READY，但 client 已被 evict"这类不一致。`_processing` 由 handler 读写，pool 只做清理兜底；PROCESSING 的 `True` / `False` 配对是 handler 的责任（含 `asyncio.CancelledError` 专门分支），而不是 pool 的。
 - **LRU 跳过 PROCESSING 而非强制上限:** `_select_lru_session` 显式跳过 PROCESSING 候选，允许池临时超出 `max_active_clients`。回收正在 query 的 session 会丢失本轮响应，代价高于短暂超限——宁可多留一个 client 也不破坏正在进行的对话。
 - **HTTP 调度控制面与飞书侧解耦:** 控制面端点不走飞书事件链（不经 `route_message` / `should_respond`），但复用同一套 `send_message` + `session_reader` + FIFO 路径。契约通过 `internal-*` 前缀 message_id + `_is_internal_message` 守卫建立：控制面负责写虚构 ID，handler 负责跳过 lark 副作用。这样控制面可以驱动状态机推进（dequeue / metrics / claude_session_id 持久化照常），但不对不存在的 message_id 发 lark-cli 子进程。端点放在 `/sessions/*`（非 `/api/*`）命名空间，与 Dashboard 明确隔离。
-- **`echo_chat_id` 与 `internal-*` 守卫并存的契约:** 守卫的语义被严格限定为"屏蔽对虚构 message_id 的 lark-cli 调用"，而 `echo_chat_id` 走的是 `send_to_target` 主动 send 路径，发到真实 chat_id / open_id，根本不挂在 message_id 上。两条路径在 handler 里并列存在但互不依赖：reply 分支被 `_is_internal_message` 守卫包住，echo 分支由 `echo_chat_id` 是否非空控制。把 echo 单独抽出来而不是塞进守卫之内，是为了让"消息可达 owner"这件事独立于"是否有真实 message_id"——控制面派发的子 session 即便完全没有飞书消息上下文，也能把 ResultMessage 主动推回 owner；同时反向也成立——飞书侧普通会话即便没设 `echo_chat_id` 也照常 reply。两者各管一面，避免后续误把 echo 也并进守卫导致控制面派发"静默失踪"。
+- **`echo_chat_id` 与 `internal-*` 守卫并存的契约:** 守卫的语义被严格限定为"屏蔽对虚构 message_id 的 lark-cli 调用"，而 `echo_chat_id` 走的是 `send_to_target` 主动 send 路径，发到真实 chat_id / open_id，根本不挂在 message_id 上。两条路径在 handler 里并列存在但互不依赖：reply 分支被 `_is_internal_message` 守卫包住，echo 分支由 reader 计算出的 `echo_target` 是否非空控制。把 echo 单独抽出来而不是塞进守卫之内，是为了让"消息可达 owner"这件事独立于"是否有真实 message_id"——控制面派发的子 session 即便完全没有飞书消息上下文，也能把 ResultMessage 主动推回 owner；同时反向也成立——飞书侧普通会话即便没设 `echo_chat_id` 也照常 reply。两者各管一面，避免后续误把 echo 也并进守卫导致控制面派发"静默失踪"。
+- **Reader 侧默认值取 `OWNER_ID` 而非 `""`:** dispatch 控制面绑回环 + 仅 owner 主 agent 调，没有"echo 外溢给别人"的风险面；让缺字段默认 echo 到 owner 单聊的代价仅为一次飞书消息，收益是"老 session（字段引入前已存在）也自动享受 echo"以及"server 侧不写 store 的极端路径也有兜底"。**显式 `""` 是关闭 echo 的唯一通道**——这是有意把"未配置"和"主动关闭"语义分开：控制面调用方若不想 echo，必须显式传 `""`，不能靠"忘传"达成关闭。
