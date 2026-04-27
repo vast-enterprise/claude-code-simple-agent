@@ -8,7 +8,7 @@ from src.router import (
     BOT_MENTION,
     _compute_base_session_id,
     _compute_full_session_id,
-    _extract_suffix_from_session_id,
+    extract_suffix_from_session_id,
 )
 
 
@@ -31,11 +31,11 @@ def test_compute_full_session_id_without_suffix():
 
 
 def test_extract_suffix_from_session_id():
-    assert _extract_suffix_from_session_id("p2p_ou_123_cms", "p2p_ou_123") == "cms"
+    assert extract_suffix_from_session_id("p2p_ou_123_cms", "p2p_ou_123") == "cms"
 
 
 def test_extract_suffix_returns_none_for_base():
-    assert _extract_suffix_from_session_id("p2p_ou_123", "p2p_ou_123") is None
+    assert extract_suffix_from_session_id("p2p_ou_123", "p2p_ou_123") is None
 
 
 # === route_message 路由测试 ===

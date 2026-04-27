@@ -30,13 +30,20 @@ def _compute_full_session_id(base: str, suffix: str | None) -> str:
     return f"{base}_{suffix}"
 
 
-def _extract_suffix_from_session_id(session_id: str, base: str) -> str | None:
-    """从完整 session_id 中提取 suffix，无 suffix 返回 None"""
+def extract_suffix_from_session_id(session_id: str, base: str) -> str | None:
+    """从完整 session_id 中提取 suffix，无 suffix 返回 None。
+
+    公开函数：供 server.py 控制平面在 POST /message 中反推 suffix 使用。
+    """
     if session_id == base:
         return None
     if session_id.startswith(base + "_"):
         return session_id[len(base) + 1 :]
     return None
+
+
+# 内部私有别名，保持内部调用可读性一致（也方便 router 内部继续用 _extract_* 名称）
+_extract_suffix_from_session_id = extract_suffix_from_session_id
 
 
 def _is_user_session(session_id: str, base: str) -> bool:

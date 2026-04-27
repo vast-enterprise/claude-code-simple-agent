@@ -529,8 +529,19 @@ class TestSendMessage(AioHTTPTestCase):
 
     @unittest_run_loop
     async def test_suffix_omitted_defaults_to_none(self):
-        """body 不带 suffix → session_reader 的 suffix 为 None"""
+        """body 不带 suffix 且 session_id 无 suffix 部分 → session_reader 的 suffix 为 None。
+
+        注意：session_id=p2p_ou_test_REQ-12345 实际上含 suffix=REQ-12345，
+        但本测试 setup 中的 session 是 p2p_ou_test_REQ-12345，若 base=p2p_ou_test，
+        则 extract 出 suffix=REQ-12345，不是 None。
+        使用不含 suffix 的 session_id（p2p_ou_test）来覆盖无 suffix 场景。
+        """
         from unittest.mock import patch
+
+        # 重写 list_sessions 使 p2p_ou_test 存在（无 suffix 的 session）
+        self.mock_pool.list_sessions.return_value = {
+            "p2p_ou_test": {"task_id": None, "task_type": None},
+        }
 
         async def _noop(*args, **kwargs):
             pass
@@ -538,11 +549,104 @@ class TestSendMessage(AioHTTPTestCase):
         with patch("src.server.session_reader", side_effect=_noop) as mock_reader:
             body = {"message": "hi"}
             resp = await self.client.post(
-                "/sessions/p2p_ou_test_REQ-12345/message", json=body
+                "/sessions/p2p_ou_test/message", json=body
             )
             assert resp.status == 200
             data = await resp.json()
-            assert data.get("session_id") == "p2p_ou_test_REQ-12345"
+            assert data.get("session_id") == "p2p_ou_test"
+
+            call_args = self.mock_dispatcher.dispatch.await_args
+            rf = call_args.kwargs.get("reader_factory")
+            coro = rf()
+            coro.close()
+
+            assert mock_reader.called
+            _, kwargs = mock_reader.call_args
+            assert kwargs.get("suffix") is None
+
+    @unittest_run_loop
+    async def test_message_extracts_suffix_from_session_id_when_omitted(self):
+        """body 不传 suffix 时，从 session_id 自动反推 suffix 传给 reader_factory。
+
+        session_id=p2p_ou_test_REQ-foo，base=p2p_ou_test → suffix 应为 "REQ-foo"。
+        """
+        from unittest.mock import patch
+
+        # 注入带 suffix 的 session
+        self.mock_pool.list_sessions.return_value = {
+            "p2p_ou_test_REQ-foo": {"task_id": "REQ-foo"},
+        }
+
+        async def _noop(*args, **kwargs):
+            pass
+
+        with patch("src.server.session_reader", side_effect=_noop) as mock_reader:
+            body = {"message": "hi there"}  # 故意不传 suffix
+            resp = await self.client.post(
+                "/sessions/p2p_ou_test_REQ-foo/message", json=body
+            )
+            assert resp.status == 200
+
+            call_args = self.mock_dispatcher.dispatch.await_args
+            rf = call_args.kwargs.get("reader_factory")
+            coro = rf()
+            coro.close()
+
+            assert mock_reader.called
+            _, kwargs = mock_reader.call_args
+            assert kwargs.get("suffix") == "REQ-foo"
+
+    @unittest_run_loop
+    async def test_message_body_suffix_overrides_extraction(self):
+        """body 明确传 suffix=REQ-bar 时，优先用 body 的值而非从 session_id 反推。
+
+        session_id=p2p_ou_test_REQ-foo → 若按 session_id 反推应为 REQ-foo，
+        但 body 传了 suffix=REQ-bar，应以 body 为准。
+        """
+        from unittest.mock import patch
+
+        self.mock_pool.list_sessions.return_value = {
+            "p2p_ou_test_REQ-foo": {"task_id": "REQ-foo"},
+        }
+
+        async def _noop(*args, **kwargs):
+            pass
+
+        with patch("src.server.session_reader", side_effect=_noop) as mock_reader:
+            body = {"message": "hi", "suffix": "REQ-bar"}
+            resp = await self.client.post(
+                "/sessions/p2p_ou_test_REQ-foo/message", json=body
+            )
+            assert resp.status == 200
+
+            call_args = self.mock_dispatcher.dispatch.await_args
+            rf = call_args.kwargs.get("reader_factory")
+            coro = rf()
+            coro.close()
+
+            assert mock_reader.called
+            _, kwargs = mock_reader.call_args
+            # body 显式传 suffix=REQ-bar，应优先于 session_id 反推
+            assert kwargs.get("suffix") == "REQ-bar"
+
+    @unittest_run_loop
+    async def test_message_no_suffix_when_session_is_base_p2p(self):
+        """session_id=p2p_ou_test（无 suffix 部分）+ body 不传 → suffix=None，不强加。"""
+        from unittest.mock import patch
+
+        self.mock_pool.list_sessions.return_value = {
+            "p2p_ou_test": {"task_id": None},
+        }
+
+        async def _noop(*args, **kwargs):
+            pass
+
+        with patch("src.server.session_reader", side_effect=_noop) as mock_reader:
+            body = {"message": "hello"}
+            resp = await self.client.post(
+                "/sessions/p2p_ou_test/message", json=body
+            )
+            assert resp.status == 200
 
             call_args = self.mock_dispatcher.dispatch.await_args
             rf = call_args.kwargs.get("reader_factory")

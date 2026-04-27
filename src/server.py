@@ -10,6 +10,7 @@ from aiohttp import web
 from src.config import OWNER_ID, ROOT, log_info
 from src.handler import send_message, session_reader
 from src.pool import SessionStatus
+from src.router import extract_suffix_from_session_id
 
 # suffix 白名单：避免与飞书侧 /new {suffix} / $suffix 解析冲突（空格、换行、$、/ 等）
 _SUFFIX_PATTERN = re.compile(r"[A-Za-z0-9_\-\.]+")
@@ -515,6 +516,12 @@ async def _handle_send_message(request):
     # 400: suffix 可选但须为 str
     if suffix is not None and not isinstance(suffix, str):
         return _json({"error": "suffix must be a string"}, status=400)
+
+    # fallback：body 不传 suffix 时从 session_id 自动反推。
+    # 控制平面仅服务 owner p2p，base 固定为 f"p2p_{OWNER_ID}"。
+    # extract_suffix_from_session_id 返回 None 表示无 suffix，行为等同于直接 None。
+    if not suffix:
+        suffix = extract_suffix_from_session_id(session_id, f"p2p_{OWNER_ID}")
 
     # 404: session 不存在（经 pool.list_sessions() 公共 API 查）
     existing = pool.list_sessions()
