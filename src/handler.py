@@ -254,28 +254,17 @@ async def session_reader(
                         if reaction_id and not is_internal:
                             remove_reaction(mid, reaction_id)
 
-                        # 一次拼装，reply 分支和 echo 分支共用 prefixed_texts
                         prefixed_texts = [_format_with_suffix(t, suffix) for t in reply_texts]
 
-                        # reply 分支：真实飞书消息才回复（internal-* 跳过）
-                        if not is_internal:
-                            for text in prefixed_texts:
-                                reply_message(mid, text)
-
-                        # echo 分支：ResultMessage 时回传到 echo_chat_id（不受 internal 守卫限制）
-                        # 缺字段 → 默认 OWNER_ID（dispatch 仅 owner 可用，echo 永远发回 owner 自己）
-                        # 显式 "" → 关闭 echo
-                        echo_target = OWNER_ID
-                        if pool._store:
-                            meta = pool._store.load_all().get(session_id, {})
-                            if "echo_chat_id" in meta:        # 显式存了（含 ""）
-                                echo_target = meta["echo_chat_id"]
-                        if echo_target:
-                            for text in prefixed_texts:
+                        # 二选一分流：internal-* → send_to_target(OWNER_ID)；真实消息 → reply_message
+                        for text in prefixed_texts:
+                            if is_internal:
                                 try:
-                                    send_to_target(echo_target, text)
-                                except Exception as echo_err:
-                                    log_error(f"[{session_id}] echo 回传失败: {echo_err}")
+                                    send_to_target(OWNER_ID, text)
+                                except Exception as send_err:
+                                    log_error(f"[{session_id}] send_to_target 失败: {send_err}")
+                            else:
+                                reply_message(mid, text)
 
                         if metrics:
                             summary = reply_texts[0][:50] if reply_texts else ""

@@ -532,23 +532,18 @@ class TestSessionReader:
         )
 
 
-# ── echo_chat_id 分支测试 ──────────────────────────────────────────
-
-def _make_mock_pool_with_store(store_data: dict | None = None):
-    """构造 mock pool，并配置带 store 支持的版本"""
-    pool, client = _make_mock_pool()
-    store = MagicMock()
-    store.load_all = MagicMock(return_value=store_data or {})
-    pool._store = store
-    return pool, client
+# ── 新二选一分流测试 ──────────────────────────────────────────
 
 
-class TestSessionReaderEcho:
-    """session_reader echo_chat_id 分支：ResultMessage 时 send_to_target 被调"""
+class TestSessionReaderDispatchRouting:
+    """session_reader 二选一分流：internal-* → send_to_target(OWNER_ID)，真实 msg_id → reply_message"""
 
-    def _setup_reader_with_store(self, messages, pending_entry, store_data):
-        """构造 mock pool + store + client"""
-        pool, client = _make_mock_pool_with_store(store_data)
+    def _setup_reader(self, messages, pending_entry=None):
+        """构造 mock pool + client，client.receive_response() 产出 messages。
+
+        get_client 在第一次调用后返回 None，使 reader 在一轮后退出。
+        """
+        pool, client = _make_mock_pool()
 
         async def fake_receive():
             for msg in messages:
@@ -580,53 +575,13 @@ class TestSessionReaderEcho:
     @patch("src.handler.reply_message")
     @patch("src.handler.remove_reaction")
     @patch("src.handler.add_reaction", return_value="r_abc")
-    def test_reader_echo_on_result_message(
+    def test_internal_message_calls_send_to_target_with_owner(
         self, mock_add, mock_remove, mock_reply, mock_send_to_target
     ):
-        """store 里 echo_chat_id=ou_xxx，internal-* message_id → send_to_target 被调"""
-        session_id = "p2p_ou_owner_REQ-1"
-        store_data = {session_id: {"echo_chat_id": "ou_xxx"}}
-        pending = {"message_id": f"internal-{session_id}", "content": "hi"}
-        pool = self._setup_reader_with_store(
-            self._result_messages(), pending, store_data
-        )
-        run_async(session_reader(session_id, pool, suffix="REQ-1"))
-        mock_send_to_target.assert_called_once()
-        call_args = mock_send_to_target.call_args
-        assert call_args.args[0] == "ou_xxx"
-
-    @patch("src.handler.send_to_target")
-    @patch("src.handler.reply_message")
-    @patch("src.handler.remove_reaction")
-    @patch("src.handler.add_reaction", return_value="r_abc")
-    def test_reader_no_echo_when_target_empty(
-        self, mock_add, mock_remove, mock_reply, mock_send_to_target
-    ):
-        """store 里 echo_chat_id="" → send_to_target 不调"""
-        session_id = "p2p_ou_owner_REQ-2"
-        store_data = {session_id: {"echo_chat_id": ""}}
-        pending = {"message_id": f"internal-uuid", "content": "hi"}
-        pool = self._setup_reader_with_store(
-            self._result_messages(), pending, store_data
-        )
-        run_async(session_reader(session_id, pool))
-        mock_send_to_target.assert_not_called()
-
-    @patch("src.handler.send_to_target")
-    @patch("src.handler.reply_message")
-    @patch("src.handler.remove_reaction")
-    @patch("src.handler.add_reaction", return_value="r_abc")
-    def test_reader_echoes_to_owner_when_target_missing(
-        self, mock_add, mock_remove, mock_reply, mock_send_to_target
-    ):
-        """store 里没有 echo_chat_id 字段（旧 session）→ 默认回传 OWNER_ID"""
-        session_id = "p2p_ou_owner_REQ-3"
-        store_data = {session_id: {}}  # 无 echo_chat_id 键
-        pending = {"message_id": "internal-uuid2", "content": "hi"}
-        pool = self._setup_reader_with_store(
-            self._result_messages(), pending, store_data
-        )
-        run_async(session_reader(session_id, pool))
+        """msg_id 以 internal- 开头 → send_to_target 以 OWNER_ID 为目标被调用"""
+        pending = {"message_id": "internal-abc123", "content": "hi"}
+        pool = self._setup_reader(self._result_messages(), pending)
+        run_async(session_reader("p2p_ou_owner_REQ-1", pool, suffix="REQ-1"))
         mock_send_to_target.assert_called_once()
         call_args = mock_send_to_target.call_args
         assert call_args.args[0] == OWNER_ID
@@ -635,17 +590,53 @@ class TestSessionReaderEcho:
     @patch("src.handler.reply_message")
     @patch("src.handler.remove_reaction")
     @patch("src.handler.add_reaction", return_value="r_abc")
-    def test_reader_echo_with_suffix_prefix(
+    def test_real_message_calls_reply_message(
         self, mock_add, mock_remove, mock_reply, mock_send_to_target
     ):
-        """suffix=REQ-foo → echo 文本带 `来自 REQ-foo 的回复：\n` 前缀"""
-        session_id = "p2p_ou_owner_REQ-foo"
-        store_data = {session_id: {"echo_chat_id": "ou_target"}}
+        """msg_id 是真实飞书 ID（om_xxx）→ reply_message 被调用，msg_id 参数正确"""
+        pending = {"message_id": "om_real_msg_id", "content": "hi"}
+        pool = self._setup_reader(self._result_messages(), pending)
+        run_async(session_reader("p2p_ou_owner", pool))
+        mock_reply.assert_called_once()
+        assert mock_reply.call_args.args[0] == "om_real_msg_id"
+
+    @patch("src.handler.send_to_target")
+    @patch("src.handler.reply_message")
+    @patch("src.handler.remove_reaction")
+    @patch("src.handler.add_reaction", return_value="r_abc")
+    def test_internal_does_not_call_reply_message(
+        self, mock_add, mock_remove, mock_reply, mock_send_to_target
+    ):
+        """internal-* 时 reply_message 不被调用"""
+        pending = {"message_id": "internal-xyz", "content": "hi"}
+        pool = self._setup_reader(self._result_messages(), pending)
+        run_async(session_reader("p2p_ou_owner_REQ-2", pool, suffix="REQ-2"))
+        mock_reply.assert_not_called()
+
+    @patch("src.handler.send_to_target")
+    @patch("src.handler.reply_message")
+    @patch("src.handler.remove_reaction")
+    @patch("src.handler.add_reaction", return_value="r_abc")
+    def test_real_does_not_call_send_to_target(
+        self, mock_add, mock_remove, mock_reply, mock_send_to_target
+    ):
+        """真实 msg_id 时 send_to_target 不被调用"""
+        pending = {"message_id": "om_real_abc", "content": "hi"}
+        pool = self._setup_reader(self._result_messages(), pending)
+        run_async(session_reader("p2p_ou_owner", pool))
+        mock_send_to_target.assert_not_called()
+
+    @patch("src.handler.send_to_target")
+    @patch("src.handler.reply_message")
+    @patch("src.handler.remove_reaction")
+    @patch("src.handler.add_reaction", return_value="r_abc")
+    def test_internal_send_to_target_has_suffix_prefix(
+        self, mock_add, mock_remove, mock_reply, mock_send_to_target
+    ):
+        """internal-* 路径：发给 OWNER_ID 的文本带 suffix 前缀"""
         pending = {"message_id": "internal-uuid3", "content": "hi"}
-        pool = self._setup_reader_with_store(
-            self._result_messages("具体内容"), pending, store_data
-        )
-        run_async(session_reader(session_id, pool, suffix="REQ-foo"))
+        pool = self._setup_reader(self._result_messages("具体内容"), pending)
+        run_async(session_reader("p2p_ou_owner_REQ-foo", pool, suffix="REQ-foo"))
         mock_send_to_target.assert_called_once()
         sent_text = mock_send_to_target.call_args.args[1]
         assert sent_text.startswith("来自 REQ-foo 的回复：")
@@ -655,32 +646,42 @@ class TestSessionReaderEcho:
     @patch("src.handler.reply_message")
     @patch("src.handler.remove_reaction")
     @patch("src.handler.add_reaction", return_value="r_abc")
-    def test_reader_echo_not_triggered_on_assistant_message(
+    def test_real_reply_has_suffix_prefix(
         self, mock_add, mock_remove, mock_reply, mock_send_to_target
     ):
-        """仅 AssistantMessage 出现（无 ResultMessage）→ send_to_target 不调"""
-        session_id = "p2p_ou_owner_REQ-4"
-        store_data = {session_id: {"echo_chat_id": "ou_target"}}
-        pending = {"message_id": "internal-uuid4", "content": "hi"}
-        # 只有 AssistantMessage，没有 ResultMessage
-        messages = [AssistantMessage(content=[TextBlock(text="中间回复")], model="sonnet")]
-        pool = self._setup_reader_with_store(messages, pending, store_data)
-        run_async(session_reader(session_id, pool))
-        mock_send_to_target.assert_not_called()
+        """真实 msg_id 路径：reply_message 的文本也带 suffix 前缀"""
+        pending = {"message_id": "om_test_real", "content": "hi"}
+        pool = self._setup_reader(self._result_messages("真实回复"), pending)
+        run_async(session_reader("p2p_ou_owner_cms", pool, suffix="cms"))
+        mock_reply.assert_called_once()
+        reply_text = mock_reply.call_args.args[1]
+        assert reply_text.startswith("来自 cms 的回复：")
+        assert "真实回复" in reply_text
 
     @patch("src.handler.send_to_target")
     @patch("src.handler.reply_message")
     @patch("src.handler.remove_reaction")
     @patch("src.handler.add_reaction", return_value="r_abc")
-    def test_reader_echo_not_triggered_on_exception(
+    def test_routing_not_triggered_on_assistant_message(
+        self, mock_add, mock_remove, mock_reply, mock_send_to_target
+    ):
+        """仅 AssistantMessage（无 ResultMessage）→ 两条路径都不触发"""
+        pending = {"message_id": "internal-uuid4", "content": "hi"}
+        messages = [AssistantMessage(content=[TextBlock(text="中间回复")], model="sonnet")]
+        pool = self._setup_reader(messages, pending)
+        run_async(session_reader("p2p_ou_owner_REQ-4", pool))
+        mock_send_to_target.assert_not_called()
+        mock_reply.assert_not_called()
+
+    @patch("src.handler.send_to_target")
+    @patch("src.handler.reply_message")
+    @patch("src.handler.remove_reaction")
+    @patch("src.handler.add_reaction", return_value="r_abc")
+    def test_routing_not_triggered_on_exception(
         self, mock_add, mock_remove, mock_reply, mock_send_to_target
     ):
         """reader 抛异常路径 → send_to_target 不调"""
-        session_id = "p2p_ou_owner_REQ-5"
-        store_data = {session_id: {"echo_chat_id": "ou_target"}}
-        pending = {"message_id": "om_real", "content": "hi"}
-
-        pool, client = _make_mock_pool_with_store(store_data)
+        pool, client = _make_mock_pool()
 
         async def failing_receive():
             yield AssistantMessage(content=[TextBlock(text="部分")], model="sonnet")
@@ -692,27 +693,23 @@ class TestSessionReaderEcho:
             call_count[0] += 1
             return client if call_count[0] <= 1 else None
         pool.get_client = MagicMock(side_effect=get_client_once)
+        pending = {"message_id": "om_real", "content": "hi"}
         pool.peek_pending = MagicMock(return_value=pending)
         pool.dequeue_message = MagicMock(return_value=pending)
 
-        run_async(session_reader(session_id, pool))
+        run_async(session_reader("p2p_ou_owner_REQ-5", pool))
         mock_send_to_target.assert_not_called()
 
     @patch("src.handler.send_to_target", side_effect=Exception("send failed"))
     @patch("src.handler.reply_message")
     @patch("src.handler.remove_reaction")
     @patch("src.handler.add_reaction", return_value="r_abc")
-    def test_reader_echo_failure_does_not_break_state_machine(
+    def test_send_to_target_failure_does_not_break_state_machine(
         self, mock_add, mock_remove, mock_reply, mock_send_to_target
     ):
-        """send_to_target 失败（log_error）但 set_processing(False) 仍正常翻转"""
-        session_id = "p2p_ou_owner_REQ-6"
-        store_data = {session_id: {"echo_chat_id": "ou_target"}}
+        """send_to_target 失败（异常）但 set_processing(False) 仍正常翻转"""
         pending = {"message_id": "internal-uuid6", "content": "hi"}
-        pool = self._setup_reader_with_store(
-            self._result_messages(), pending, store_data
-        )
-        run_async(session_reader(session_id, pool, suffix="REQ-6"))
-        # 状态机仍正常翻转
+        pool = self._setup_reader(self._result_messages(), pending)
+        run_async(session_reader("p2p_ou_owner_REQ-6", pool, suffix="REQ-6"))
         false_calls = [c for c in pool.set_processing.call_args_list if c.args[1] is False]
         assert len(false_calls) == 1
