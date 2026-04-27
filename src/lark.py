@@ -375,13 +375,33 @@ def _convert_md_tables(text: str) -> str:
     return _MD_TABLE_PATTERN.sub(_md_table_to_text, text)
 
 
-def reply_message(message_id: str, text: str):
-    """通过 lark-cli 回复飞书消息（markdown 富文本格式）"""
+def _prepare_markdown_text(text: str) -> str:
+    """共享 markdown 预处理 helper：截断 + 表格转换。
+
+    被 reply_message 和 send_to_target 共用，避免重复实现。
+    - 超过 15000 字符时截断并追加提示
+    - 将 markdown 表格转为飞书兼容的纯文本格式（飞书 md tag 不支持表格）
+    """
     if len(text) > 15000:
         text = text[:14950] + "\n\n...(回复过长，已截断)"
+    return _convert_md_tables(text)
 
-    # 飞书 md tag 不支持表格，发送前转为纯文本格式
-    text = _convert_md_tables(text)
+
+def _resolve_receive_id_type(target_id: str) -> str:
+    """根据 target_id 前缀判断 receive_id_type。
+
+    - ou_* → open_id（飞书用户 open_id）
+    - oc_* → chat_id（飞书群聊 chat_id）
+    - 其他 → open_id（兜底）
+    """
+    if target_id.startswith("oc_"):
+        return "chat_id"
+    return "open_id"
+
+
+def reply_message(message_id: str, text: str):
+    """通过 lark-cli 回复飞书消息（markdown 富文本格式）"""
+    text = _prepare_markdown_text(text)
 
     result = subprocess.run(
         [
@@ -411,3 +431,35 @@ def _reply_plain_text(message_id: str, text: str):
     )
     if result.returncode != 0:
         log_error(f"回复消息失败(fallback): {result.stderr[:200]}")
+
+
+def send_to_target(target_id: str, text: str):
+    """主动 send 一条消息到指定目标（chat_id / open_id 自动判别）。
+
+    与 reply_message 的差别：
+    - reply_message 挂在某条 message_id 上（被守卫屏蔽 internal-* 场景）
+    - send_to_target 主动 send 到 chat_id / open_id（不依赖 message_id，
+      可用于控制平面 echo 场景——把子 session ResultMessage 回传给 owner）
+
+    失败 log_error 不抛（与 reply_message 一致）。
+    不做 plain text 降级——主动 send 失败就失败，再降级反而干扰核心状态机。
+    """
+    text = _prepare_markdown_text(text)
+    receive_id_type = _resolve_receive_id_type(target_id)
+    params = json.dumps({"receive_id_type": receive_id_type})
+    data = json.dumps({
+        "receive_id": target_id,
+        "msg_type": "text",
+        "content": json.dumps({"text": text}),
+    })
+    result = subprocess.run(
+        [
+            "lark-cli", "im", "messages", "create",
+            "--params", params,
+            "--data", data,
+            "--as", "bot",
+        ],
+        capture_output=True, text=True, timeout=15,
+    )
+    if result.returncode != 0:
+        log_error(f"发送消息失败(send_to_target {target_id}): {result.stderr[:200]}")

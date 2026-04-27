@@ -562,3 +562,166 @@ class TestSendMessageNoDispatcher(AioHTTPTestCase):
         assert resp.status == 503
         data = await resp.json()
         assert "dispatcher" in data.get("error", "").lower()
+
+
+# ── echo_chat_id 测试 ──────────────────────────────────────────
+
+
+class TestCreateSessionEchoChatId(AioHTTPTestCase):
+    """POST /sessions/{owner_id}/create — echo_chat_id 字段处理"""
+
+    async def get_application(self):
+        self.mock_pool = MagicMock()
+        self.mock_pool.list_sessions.return_value = {}
+        self.mock_pool.get_status = MagicMock(return_value="PROCESSING")
+        self.mock_pool.active_client_count.return_value = 0
+        self.mock_pool.max_active_clients = 5
+        self.mock_pool._store = MagicMock()
+        self.mock_pool._store.load_all = MagicMock(return_value={})
+        self.mock_pool._store.save = MagicMock()
+
+        self.metrics = MetricsCollector()
+        self.mock_dispatcher = MagicMock()
+        self.mock_dispatcher.dispatch = AsyncMock()
+
+        return _create_app(self.mock_pool, self.metrics, dispatcher=self.mock_dispatcher)
+
+    @unittest_run_loop
+    async def test_create_default_echo_owner_id(self):
+        """不传 echo_chat_id → store 里写入 OWNER_ID"""
+        from src.config import OWNER_ID
+        body = {"suffix": "REQ-1", "message": "hi"}
+        resp = await self.client.post("/sessions/ou_test/create", json=body)
+        assert resp.status == 200
+        # store.save 应被调用，且含 echo_chat_id=OWNER_ID
+        save_calls = self.mock_pool._store.save.call_args_list
+        echo_saves = [
+            c for c in save_calls
+            if len(c.args) >= 2 and isinstance(c.args[1], dict) and "echo_chat_id" in c.args[1]
+        ]
+        assert len(echo_saves) >= 1
+        saved_val = echo_saves[-1].args[1]["echo_chat_id"]
+        assert saved_val == OWNER_ID
+
+    @unittest_run_loop
+    async def test_create_explicit_echo(self):
+        """传 echo_chat_id="oc_xxx" → store 写入 oc_xxx"""
+        body = {"suffix": "REQ-2", "message": "hi", "echo_chat_id": "oc_xxx"}
+        resp = await self.client.post("/sessions/ou_test/create", json=body)
+        assert resp.status == 200
+        save_calls = self.mock_pool._store.save.call_args_list
+        echo_saves = [
+            c for c in save_calls
+            if len(c.args) >= 2 and isinstance(c.args[1], dict) and "echo_chat_id" in c.args[1]
+        ]
+        assert len(echo_saves) >= 1
+        assert echo_saves[-1].args[1]["echo_chat_id"] == "oc_xxx"
+
+    @unittest_run_loop
+    async def test_create_empty_echo_disabled(self):
+        """传 echo_chat_id="" → store 写入 ""（关闭回传）"""
+        body = {"suffix": "REQ-3", "message": "hi", "echo_chat_id": ""}
+        resp = await self.client.post("/sessions/ou_test/create", json=body)
+        assert resp.status == 200
+        save_calls = self.mock_pool._store.save.call_args_list
+        echo_saves = [
+            c for c in save_calls
+            if len(c.args) >= 2 and isinstance(c.args[1], dict) and "echo_chat_id" in c.args[1]
+        ]
+        assert len(echo_saves) >= 1
+        assert echo_saves[-1].args[1]["echo_chat_id"] == ""
+
+    @unittest_run_loop
+    async def test_create_echo_invalid_type(self):
+        """传 echo_chat_id=123（非 str）→ 400"""
+        body = {"suffix": "REQ-4", "message": "hi", "echo_chat_id": 123}
+        resp = await self.client.post("/sessions/ou_test/create", json=body)
+        assert resp.status == 400
+        data = await resp.json()
+        assert "echo_chat_id" in data.get("error", "")
+        assert self.mock_dispatcher.dispatch.await_count == 0
+
+
+class TestSendMessageEchoChatId(AioHTTPTestCase):
+    """POST /sessions/{session_id}/message — echo_chat_id 字段处理"""
+
+    async def get_application(self):
+        self.mock_pool = MagicMock()
+        self.mock_pool.list_sessions.return_value = {
+            "p2p_ou_test_REQ-12345": {"task_id": "REQ-12345", "echo_chat_id": "ou_echo_a"},
+        }
+        self.mock_pool.get_status = MagicMock(return_value="READY")
+        self.mock_pool.active_client_count.return_value = 0
+        self.mock_pool.max_active_clients = 5
+        self.mock_pool._store = MagicMock()
+        self.mock_pool._store.load_all = MagicMock(return_value={
+            "p2p_ou_test_REQ-12345": {"echo_chat_id": "ou_echo_a"},
+        })
+        self.mock_pool._store.save = MagicMock()
+
+        self.metrics = MetricsCollector()
+        self.mock_dispatcher = MagicMock()
+        self.mock_dispatcher.dispatch = AsyncMock()
+
+        return _create_app(self.mock_pool, self.metrics, dispatcher=self.mock_dispatcher)
+
+    @unittest_run_loop
+    async def test_message_omits_echo_preserves_existing(self):
+        """不传 echo_chat_id → store 保留原有值（不覆盖为 None）"""
+        body = {"message": "hi"}
+        resp = await self.client.post(
+            "/sessions/p2p_ou_test_REQ-12345/message", json=body
+        )
+        assert resp.status == 200
+        # store.save 不应以 echo_chat_id=None 覆盖
+        save_calls = self.mock_pool._store.save.call_args_list
+        echo_saves = [
+            c for c in save_calls
+            if len(c.args) >= 2 and isinstance(c.args[1], dict) and "echo_chat_id" in c.args[1]
+        ]
+        # 没传 echo_chat_id 时不应有 echo 相关 save
+        assert len(echo_saves) == 0
+
+    @unittest_run_loop
+    async def test_message_overrides_echo(self):
+        """传 echo_chat_id="ou_echo_b" → store 更新为 ou_echo_b"""
+        body = {"message": "hi", "echo_chat_id": "ou_echo_b"}
+        resp = await self.client.post(
+            "/sessions/p2p_ou_test_REQ-12345/message", json=body
+        )
+        assert resp.status == 200
+        save_calls = self.mock_pool._store.save.call_args_list
+        echo_saves = [
+            c for c in save_calls
+            if len(c.args) >= 2 and isinstance(c.args[1], dict) and "echo_chat_id" in c.args[1]
+        ]
+        assert len(echo_saves) >= 1
+        assert echo_saves[-1].args[1]["echo_chat_id"] == "ou_echo_b"
+
+    @unittest_run_loop
+    async def test_message_disable_echo(self):
+        """传 echo_chat_id="" → store 更新为 ""（关闭回传）"""
+        body = {"message": "hi", "echo_chat_id": ""}
+        resp = await self.client.post(
+            "/sessions/p2p_ou_test_REQ-12345/message", json=body
+        )
+        assert resp.status == 200
+        save_calls = self.mock_pool._store.save.call_args_list
+        echo_saves = [
+            c for c in save_calls
+            if len(c.args) >= 2 and isinstance(c.args[1], dict) and "echo_chat_id" in c.args[1]
+        ]
+        assert len(echo_saves) >= 1
+        assert echo_saves[-1].args[1]["echo_chat_id"] == ""
+
+    @unittest_run_loop
+    async def test_message_echo_invalid_type(self):
+        """传 echo_chat_id=123（非 str）→ 400"""
+        body = {"message": "hi", "echo_chat_id": 123}
+        resp = await self.client.post(
+            "/sessions/p2p_ou_test_REQ-12345/message", json=body
+        )
+        assert resp.status == 400
+        data = await resp.json()
+        assert "echo_chat_id" in data.get("error", "")
+        assert self.mock_dispatcher.dispatch.await_count == 0

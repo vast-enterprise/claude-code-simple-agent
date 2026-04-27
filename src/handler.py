@@ -14,13 +14,24 @@ from claude_agent_sdk.types import AssistantMessage, ResultMessage, TextBlock
 
 import src.permissions as permissions
 from src.config import OWNER_ID, BOT_NAME, log_debug, log_error
-from src.lark import add_reaction, remove_reaction, reply_message, resolve_user_name, resolve_chat_name
+from src.lark import add_reaction, remove_reaction, reply_message, send_to_target, resolve_user_name, resolve_chat_name
 from src.pool import ClientPool
 
 if TYPE_CHECKING:
     from src.metrics import MetricsCollector
 
 BOT_MENTION = f"@{BOT_NAME}"
+
+
+def _format_with_suffix(text: str, suffix: str | None) -> str:
+    """给回复文本附加 suffix 前缀（共用，reply 分支和 echo 分支都调它）。
+
+    有 suffix → 返回 "来自 {suffix} 的回复：\n{text}"
+    无 suffix → 原样返回
+    """
+    if suffix:
+        return f"来自 {suffix} 的回复：\n{text}"
+    return text
 
 
 def _is_internal_message(message_id: str) -> bool:
@@ -242,11 +253,26 @@ async def session_reader(
                         is_internal = _is_internal_message(mid)
                         if reaction_id and not is_internal:
                             remove_reaction(mid, reaction_id)
+
+                        # 一次拼装，reply 分支和 echo 分支共用 prefixed_texts
+                        prefixed_texts = [_format_with_suffix(t, suffix) for t in reply_texts]
+
+                        # reply 分支：真实飞书消息才回复（internal-* 跳过）
                         if not is_internal:
-                            for text in reply_texts:
-                                if suffix:
-                                    text = f"来自 {suffix} 的回复：\n{text}"
+                            for text in prefixed_texts:
                                 reply_message(mid, text)
+
+                        # echo 分支：ResultMessage 时回传到 echo_chat_id（不受 internal 守卫限制）
+                        echo_target = ""
+                        if pool._store:
+                            echo_target = pool._store.load_all().get(session_id, {}).get("echo_chat_id", "")
+                        if echo_target:
+                            for text in prefixed_texts:
+                                try:
+                                    send_to_target(echo_target, text)
+                                except Exception as echo_err:
+                                    log_error(f"[{session_id}] echo 回传失败: {echo_err}")
+
                         if metrics:
                             summary = reply_texts[0][:50] if reply_texts else ""
                             metrics.record_message(session_id, current_msg.get("content", ""), success, summary)

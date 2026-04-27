@@ -278,6 +278,27 @@ async def _handle_session_page(request):
 # ── 调度控制面（/sessions/*，不在 /api/ 命名空间下） ──
 
 
+def _parse_echo_chat_id(body: dict, default=None) -> tuple[bool, str | None, str | None]:
+    """解析 echo_chat_id 字段，返回三元组 (present, value, error)。
+
+    - present=False：字段不存在（调用方应使用 default 或不更新）
+    - present=True, value=str, error=None：字段存在且合法（含空字符串，代表关闭 echo）
+    - present=True, value=None, error=str：字段存在但类型非法 → 返回错误信息
+
+    校验：非 str → error；其他值（含 ""）一律放行。
+
+    Args:
+        body: 请求体 dict
+        default: 字段不存在时的默认值。POST /create 传 OWNER_ID，POST /message 传 None。
+    """
+    if "echo_chat_id" not in body:
+        return (False, default, None)
+    value = body["echo_chat_id"]
+    if not isinstance(value, str):
+        return (True, None, "echo_chat_id must be a string")
+    return (True, value, None)
+
+
 def _owner_matches(session_id: str, owner_id: str) -> bool:
     """判断 session_id 是否属于指定 owner。
 
@@ -398,6 +419,11 @@ async def _handle_create_session(request):
     if task_type is not None and not isinstance(task_type, str):
         return _json({"error": "task_type must be a string"}, status=400)
 
+    # 解析 echo_chat_id（不传时默认 OWNER_ID；传 "" 关闭；传非 str → 400）
+    _echo_present, echo_chat_id, echo_error = _parse_echo_chat_id(body, default=OWNER_ID)
+    if echo_error:
+        return _json({"error": echo_error}, status=400)
+
     session_id = f"p2p_{owner_id}_{suffix}"
 
     # 409：session 已存在（调用方应改用 /message 端点复用）
@@ -409,13 +435,15 @@ async def _handle_create_session(request):
             status=409,
         )
 
-    # 先写 task 元数据（save 是幂等 merge，先写后写都 OK；先写更简单）
-    if pool._store is not None and (task_id or task_type):
+    # 先写元数据（save 是幂等 merge，先写后写都 OK；先写更简单）
+    if pool._store is not None:
         meta: dict = {}
         if task_id:
             meta["task_id"] = task_id
         if task_type:
             meta["task_type"] = task_type
+        # echo_chat_id 始终写入（不传时默认 OWNER_ID，传 "" 关闭，传合法值覆盖）
+        meta["echo_chat_id"] = echo_chat_id
         pool._store.save(session_id, meta)
 
     # 构造虚拟事件，镜像 route_message 从真实 Lark 事件计算出的结构
@@ -506,6 +534,11 @@ async def _handle_send_message(request):
     if suffix is not None and not isinstance(suffix, str):
         return _json({"error": "suffix must be a string"}, status=400)
 
+    # 解析 echo_chat_id（不传时 present=False，不覆盖 store；传非 str → 400）
+    echo_present, echo_chat_id, echo_error = _parse_echo_chat_id(body, default=None)
+    if echo_error:
+        return _json({"error": echo_error}, status=400)
+
     # 404: session 不存在（经 pool.list_sessions() 公共 API 查）
     existing = pool.list_sessions()
     if session_id not in existing:
@@ -520,6 +553,10 @@ async def _handle_send_message(request):
             {"error": "session is processing", "session_id": session_id},
             status=409,
         )
+
+    # 只有显式传 echo_chat_id 时才更新 store（含 "" 关闭）；缺失时不覆盖
+    if echo_present and pool._store is not None:
+        pool._store.save(session_id, {"echo_chat_id": echo_chat_id})
 
     # 构造虚拟事件，镜像 create 端点
     event = {

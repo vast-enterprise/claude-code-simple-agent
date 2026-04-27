@@ -14,6 +14,7 @@ from src.lark import (
     _extract_message_text,
     _resolve_inline_images,
     _convert_md_tables,
+    send_to_target,
 )
 
 
@@ -330,3 +331,76 @@ class TestRemoveReaction:
         with caplog.at_level(logging.ERROR, logger="avatar"):
             remove_reaction("om_123", "r_abc")
         assert "移除表情失败" in caplog.text
+
+
+# ── send_to_target 测试 ──────────────────────────────────────────
+
+class TestSendToTarget:
+    """send_to_target: 主动发消息到指定 chat_id / open_id"""
+
+    @patch("src.lark.subprocess.run")
+    def test_send_to_target_open_id(self, mock_run):
+        """target_id=ou_xxx → receive_id_type=open_id"""
+        mock_run.return_value = MagicMock(returncode=0)
+        send_to_target("ou_xxx", "hello")
+        mock_run.assert_called_once()
+        args = mock_run.call_args[0][0]
+        # 找 --params 参数值
+        idx = args.index("--params")
+        params_str = args[idx + 1]
+        params = json.loads(params_str)
+        assert params.get("receive_id_type") == "open_id"
+
+    @patch("src.lark.subprocess.run")
+    def test_send_to_target_chat_id(self, mock_run):
+        """target_id=oc_xxx → receive_id_type=chat_id"""
+        mock_run.return_value = MagicMock(returncode=0)
+        send_to_target("oc_xxx", "hello")
+        mock_run.assert_called_once()
+        args = mock_run.call_args[0][0]
+        idx = args.index("--params")
+        params_str = args[idx + 1]
+        params = json.loads(params_str)
+        assert params.get("receive_id_type") == "chat_id"
+
+    @patch("src.lark.subprocess.run")
+    def test_send_to_target_truncates_long_text(self, mock_run):
+        """>15000 字符触发截断"""
+        mock_run.return_value = MagicMock(returncode=0)
+        send_to_target("ou_xxx", "x" * 20000)
+        mock_run.assert_called_once()
+        args = mock_run.call_args[0][0]
+        idx = args.index("--data")
+        data_str = args[idx + 1]
+        data = json.loads(data_str)
+        content = json.loads(data["content"])
+        sent_text = content["text"]
+        assert len(sent_text) < 15100
+        assert "截断" in sent_text
+
+    @patch("src.lark._convert_md_tables")
+    @patch("src.lark.subprocess.run")
+    def test_send_to_target_converts_md_tables(self, mock_run, mock_convert):
+        """复用 _convert_md_tables（helper 被调用）"""
+        mock_run.return_value = MagicMock(returncode=0)
+        mock_convert.return_value = "converted"
+        send_to_target("ou_xxx", "| a | b |\n|---|---|\n| 1 | 2 |\n")
+        mock_convert.assert_called_once()
+
+    @patch("src.lark.subprocess.run")
+    def test_send_to_target_logs_on_failure(self, mock_run, caplog):
+        """subprocess returncode!=0 → log_error 调用，不抛"""
+        mock_run.return_value = MagicMock(returncode=1, stderr="api error")
+        with caplog.at_level(logging.ERROR, logger="avatar"):
+            send_to_target("ou_xxx", "hello")  # 不应抛出异常
+        assert "发送消息失败" in caplog.text
+
+    @patch("src.lark._convert_md_tables")
+    @patch("src.lark.subprocess.run")
+    def test_reply_message_still_uses_shared_helper(self, mock_run, mock_convert):
+        """reply_message 抽出 _prepare_markdown_text helper 后行为不退化"""
+        mock_run.return_value = MagicMock(returncode=0)
+        mock_convert.return_value = "converted"
+        reply_message("om_123", "| a | b |\n|---|---|\n| 1 | 2 |\n")
+        # _convert_md_tables 必须被调用（shared helper 路径）
+        mock_convert.assert_called_once()

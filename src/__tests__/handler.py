@@ -530,3 +530,187 @@ class TestSessionReader:
             f"expected exactly 1 False flip (per ResultMessage, not per AssistantMessage), "
             f"got {pool.set_processing.call_args_list}"
         )
+
+
+# ── echo_chat_id 分支测试 ──────────────────────────────────────────
+
+def _make_mock_pool_with_store(store_data: dict | None = None):
+    """构造 mock pool，并配置带 store 支持的版本"""
+    pool, client = _make_mock_pool()
+    store = MagicMock()
+    store.load_all = MagicMock(return_value=store_data or {})
+    pool._store = store
+    return pool, client
+
+
+class TestSessionReaderEcho:
+    """session_reader echo_chat_id 分支：ResultMessage 时 send_to_target 被调"""
+
+    def _setup_reader_with_store(self, messages, pending_entry, store_data):
+        """构造 mock pool + store + client"""
+        pool, client = _make_mock_pool_with_store(store_data)
+
+        async def fake_receive():
+            for msg in messages:
+                yield msg
+
+        client.receive_response = fake_receive
+
+        call_count = [0]
+        def get_client_once(sid):
+            call_count[0] += 1
+            return client if call_count[0] <= 1 else None
+        pool.get_client = MagicMock(side_effect=get_client_once)
+
+        if pending_entry:
+            pool.peek_pending = MagicMock(return_value=pending_entry)
+            pool.dequeue_message = MagicMock(return_value=pending_entry)
+        return pool
+
+    def _result_messages(self, text="回复内容"):
+        return [
+            AssistantMessage(content=[TextBlock(text=text)], model="sonnet"),
+            ResultMessage(
+                subtype="result", duration_ms=100, duration_api_ms=80,
+                is_error=False, num_turns=1, session_id="x",
+            ),
+        ]
+
+    @patch("src.handler.send_to_target")
+    @patch("src.handler.reply_message")
+    @patch("src.handler.remove_reaction")
+    @patch("src.handler.add_reaction", return_value="r_abc")
+    def test_reader_echo_on_result_message(
+        self, mock_add, mock_remove, mock_reply, mock_send_to_target
+    ):
+        """store 里 echo_chat_id=ou_xxx，internal-* message_id → send_to_target 被调"""
+        session_id = "p2p_ou_owner_REQ-1"
+        store_data = {session_id: {"echo_chat_id": "ou_xxx"}}
+        pending = {"message_id": f"internal-{session_id}", "content": "hi"}
+        pool = self._setup_reader_with_store(
+            self._result_messages(), pending, store_data
+        )
+        run_async(session_reader(session_id, pool, suffix="REQ-1"))
+        mock_send_to_target.assert_called_once()
+        call_args = mock_send_to_target.call_args
+        assert call_args.args[0] == "ou_xxx"
+
+    @patch("src.handler.send_to_target")
+    @patch("src.handler.reply_message")
+    @patch("src.handler.remove_reaction")
+    @patch("src.handler.add_reaction", return_value="r_abc")
+    def test_reader_no_echo_when_target_empty(
+        self, mock_add, mock_remove, mock_reply, mock_send_to_target
+    ):
+        """store 里 echo_chat_id="" → send_to_target 不调"""
+        session_id = "p2p_ou_owner_REQ-2"
+        store_data = {session_id: {"echo_chat_id": ""}}
+        pending = {"message_id": f"internal-uuid", "content": "hi"}
+        pool = self._setup_reader_with_store(
+            self._result_messages(), pending, store_data
+        )
+        run_async(session_reader(session_id, pool))
+        mock_send_to_target.assert_not_called()
+
+    @patch("src.handler.send_to_target")
+    @patch("src.handler.reply_message")
+    @patch("src.handler.remove_reaction")
+    @patch("src.handler.add_reaction", return_value="r_abc")
+    def test_reader_no_echo_when_target_missing(
+        self, mock_add, mock_remove, mock_reply, mock_send_to_target
+    ):
+        """store 里没有 echo_chat_id 字段（旧 session）→ send_to_target 不调"""
+        session_id = "p2p_ou_owner_REQ-3"
+        store_data = {session_id: {}}  # 无 echo_chat_id 键
+        pending = {"message_id": "internal-uuid2", "content": "hi"}
+        pool = self._setup_reader_with_store(
+            self._result_messages(), pending, store_data
+        )
+        run_async(session_reader(session_id, pool))
+        mock_send_to_target.assert_not_called()
+
+    @patch("src.handler.send_to_target")
+    @patch("src.handler.reply_message")
+    @patch("src.handler.remove_reaction")
+    @patch("src.handler.add_reaction", return_value="r_abc")
+    def test_reader_echo_with_suffix_prefix(
+        self, mock_add, mock_remove, mock_reply, mock_send_to_target
+    ):
+        """suffix=REQ-foo → echo 文本带 `来自 REQ-foo 的回复：\n` 前缀"""
+        session_id = "p2p_ou_owner_REQ-foo"
+        store_data = {session_id: {"echo_chat_id": "ou_target"}}
+        pending = {"message_id": "internal-uuid3", "content": "hi"}
+        pool = self._setup_reader_with_store(
+            self._result_messages("具体内容"), pending, store_data
+        )
+        run_async(session_reader(session_id, pool, suffix="REQ-foo"))
+        mock_send_to_target.assert_called_once()
+        sent_text = mock_send_to_target.call_args.args[1]
+        assert sent_text.startswith("来自 REQ-foo 的回复：")
+        assert "具体内容" in sent_text
+
+    @patch("src.handler.send_to_target")
+    @patch("src.handler.reply_message")
+    @patch("src.handler.remove_reaction")
+    @patch("src.handler.add_reaction", return_value="r_abc")
+    def test_reader_echo_not_triggered_on_assistant_message(
+        self, mock_add, mock_remove, mock_reply, mock_send_to_target
+    ):
+        """仅 AssistantMessage 出现（无 ResultMessage）→ send_to_target 不调"""
+        session_id = "p2p_ou_owner_REQ-4"
+        store_data = {session_id: {"echo_chat_id": "ou_target"}}
+        pending = {"message_id": "internal-uuid4", "content": "hi"}
+        # 只有 AssistantMessage，没有 ResultMessage
+        messages = [AssistantMessage(content=[TextBlock(text="中间回复")], model="sonnet")]
+        pool = self._setup_reader_with_store(messages, pending, store_data)
+        run_async(session_reader(session_id, pool))
+        mock_send_to_target.assert_not_called()
+
+    @patch("src.handler.send_to_target")
+    @patch("src.handler.reply_message")
+    @patch("src.handler.remove_reaction")
+    @patch("src.handler.add_reaction", return_value="r_abc")
+    def test_reader_echo_not_triggered_on_exception(
+        self, mock_add, mock_remove, mock_reply, mock_send_to_target
+    ):
+        """reader 抛异常路径 → send_to_target 不调"""
+        session_id = "p2p_ou_owner_REQ-5"
+        store_data = {session_id: {"echo_chat_id": "ou_target"}}
+        pending = {"message_id": "om_real", "content": "hi"}
+
+        pool, client = _make_mock_pool_with_store(store_data)
+
+        async def failing_receive():
+            yield AssistantMessage(content=[TextBlock(text="部分")], model="sonnet")
+            raise RuntimeError("boom")
+
+        client.receive_response = failing_receive
+        call_count = [0]
+        def get_client_once(sid):
+            call_count[0] += 1
+            return client if call_count[0] <= 1 else None
+        pool.get_client = MagicMock(side_effect=get_client_once)
+        pool.peek_pending = MagicMock(return_value=pending)
+        pool.dequeue_message = MagicMock(return_value=pending)
+
+        run_async(session_reader(session_id, pool))
+        mock_send_to_target.assert_not_called()
+
+    @patch("src.handler.send_to_target", side_effect=Exception("send failed"))
+    @patch("src.handler.reply_message")
+    @patch("src.handler.remove_reaction")
+    @patch("src.handler.add_reaction", return_value="r_abc")
+    def test_reader_echo_failure_does_not_break_state_machine(
+        self, mock_add, mock_remove, mock_reply, mock_send_to_target
+    ):
+        """send_to_target 失败（log_error）但 set_processing(False) 仍正常翻转"""
+        session_id = "p2p_ou_owner_REQ-6"
+        store_data = {session_id: {"echo_chat_id": "ou_target"}}
+        pending = {"message_id": "internal-uuid6", "content": "hi"}
+        pool = self._setup_reader_with_store(
+            self._result_messages(), pending, store_data
+        )
+        run_async(session_reader(session_id, pool, suffix="REQ-6"))
+        # 状态机仍正常翻转
+        false_calls = [c for c in pool.set_processing.call_args_list if c.args[1] is False]
+        assert len(false_calls) == 1
