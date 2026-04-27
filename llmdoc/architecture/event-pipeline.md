@@ -193,12 +193,20 @@ lark-cli stdout
 | 方法 + 路径 | 职责 | 主要状态码 |
 |---|---|---|
 | `GET /sessions/{owner_id}` | 列出 owner 名下所有 session 及 `status`、`task_id`、`task_type`、`last_active`、`pending_count` | 200 |
-| `POST /sessions/{owner_id}/create` | 创建 `p2p_{owner_id}_{suffix}` session + 写入 task 元数据 + 可选 `echo_chat_id` 持久化到 `SessionStore` + dispatch 首条消息 | 200 / 400 / 409（已存在）/ 503（dispatcher 缺失） |
-| `POST /sessions/{session_id}/message` | 向已存在 session 追加一条消息 + 可选 `echo_chat_id` 更新 `SessionStore` | 200 / 400 / 404（不存在）/ 409（PROCESSING）/ 503 |
+| `POST /sessions/{owner_id}/create` | 创建 `p2p_{owner_id}_{suffix}` session + 写入 task 元数据 + 可选 `echo_chat_id` 持久化到 `SessionStore` + dispatch 首条消息 | 200 / 400 / 403（path owner 不匹配）/ 409（已存在）/ 503（dispatcher 缺失） |
+| `POST /sessions/{session_id}/message` | 向已存在 session 追加一条消息 + 可选 `echo_chat_id` 更新 `SessionStore` | 200 / 400 / 403（path owner 不匹配）/ 404（不存在）/ 409（PROCESSING）/ 503 |
 
 **Owner 归属判定：** `_owner_matches(session_id, owner_id)` (`src/server.py`) 用**精确段匹配**而非朴素 `startswith`，避免 `p2p_ou_test` 意外命中 `p2p_ou_testing_*` 导致跨 owner 泄露。规则：
 - p2p：`sid == f"p2p_{owner_id}"` 或 `sid.startswith(f"p2p_{owner_id}_")`。
 - group：`sid` 以 `group_` 开头，且 `_{owner_id}` 作为完整段出现（后接 `_` 或在末尾）。
+
+**Owner 校验（写端点 owner-only）：** 两个写端点在进入业务分支前先按 path 参数校验调用者身份必须 == `src.config.OWNER_ID`，不通过直接 403 短路。GET 只读端点不做路径校验——它的响应已经被 `_owner_matches` 过滤为只含目标 owner 的 session，没有副作用。
+
+| 端点 | 校验逻辑 | 不通过响应 |
+|---|---|---|
+| POST `/sessions/{owner_id}/create` (`_handle_create_session`) | path 上的 `owner_id` 必须 == `OWNER_ID` | `403 {"error": "dispatch is owner-only"}` |
+| POST `/sessions/{session_id}/message` (`_handle_send_message`) | `_owner_matches(session_id, OWNER_ID)` 必须 True | `403 {"error": "dispatch is owner-only"}` |
+| GET `/sessions/{owner_id}` (`_handle_sessions_by_owner`) | 不校验路径参数 | 仅按 `_owner_matches` 过滤响应 |
 
 **Suffix 白名单：** `_SUFFIX_PATTERN = re.compile(r"[A-Za-z0-9_\-\.]+")` (`src/server.py`)。空格、`$`、`/` 等字符被拒绝，避免与飞书侧 `/new {suffix}` / `$suffix` 命令解析冲突。
 
@@ -336,3 +344,4 @@ lark-cli stdout
 - **HTTP 调度控制面与飞书侧解耦:** 控制面端点不走飞书事件链（不经 `route_message` / `should_respond`），但复用同一套 `send_message` + `session_reader` + FIFO 路径。契约通过 `internal-*` 前缀 message_id + `_is_internal_message` 守卫建立：控制面负责写虚构 ID，handler 负责跳过 lark 副作用。这样控制面可以驱动状态机推进（dequeue / metrics / claude_session_id 持久化照常），但不对不存在的 message_id 发 lark-cli 子进程。端点放在 `/sessions/*`（非 `/api/*`）命名空间，与 Dashboard 明确隔离。
 - **`echo_chat_id` 与 `internal-*` 守卫并存的契约:** 守卫的语义被严格限定为"屏蔽对虚构 message_id 的 lark-cli 调用"，而 `echo_chat_id` 走的是 `send_to_target` 主动 send 路径，发到真实 chat_id / open_id，根本不挂在 message_id 上。两条路径在 handler 里并列存在但互不依赖：reply 分支被 `_is_internal_message` 守卫包住，echo 分支由 reader 计算出的 `echo_target` 是否非空控制。把 echo 单独抽出来而不是塞进守卫之内，是为了让"消息可达 owner"这件事独立于"是否有真实 message_id"——控制面派发的子 session 即便完全没有飞书消息上下文，也能把 ResultMessage 主动推回 owner；同时反向也成立——飞书侧普通会话即便没设 `echo_chat_id` 也照常 reply。两者各管一面，避免后续误把 echo 也并进守卫导致控制面派发"静默失踪"。
 - **Reader 侧默认值取 `OWNER_ID` 而非 `""`:** dispatch 控制面绑回环 + 仅 owner 主 agent 调，没有"echo 外溢给别人"的风险面；让缺字段默认 echo 到 owner 单聊的代价仅为一次飞书消息，收益是"老 session（字段引入前已存在）也自动享受 echo"以及"server 侧不写 store 的极端路径也有兜底"。**显式 `""` 是关闭 echo 的唯一通道**——这是有意把"未配置"和"主动关闭"语义分开：控制面调用方若不想 echo，必须显式传 `""`，不能靠"忘传"达成关闭。
+- **dispatch 控制面写端点 owner-only:** 物理层已绑 `127.0.0.1` + dispatcher 仅由主 Claude agent 注入调用，但代码级再加一层 path owner 校验把"only owner"明确写进契约——即使主 agent 误传错误的 path 参数，也不会替别人建 session 或追加消息。GET 只读端点不再额外校验路径参数，因为 `_owner_matches` 已经在响应里过滤掉非该 owner 的 session，没有副作用，多一层判等只会让 path 参数小写大小写差异之类的边角情况返 403 而失去可调试性——只读语义下宁可返 200 空列表。
