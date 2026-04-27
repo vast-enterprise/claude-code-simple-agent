@@ -91,8 +91,7 @@ curl -s -X POST "http://localhost:8420/sessions/{owner_id}/create" \
     "suffix": "req-homepage-jsonld-schema",
     "message": "<context block + 期望动作，见下节>",
     "task_id": "recvhqUZJ2eZAI",
-    "task_type": "requirement",
-    "echo_chat_id": "ou_8adc8aca7ad728142eb6669e5b13fb52"
+    "task_type": "requirement"
   }'
 ```
 
@@ -101,11 +100,12 @@ curl -s -X POST "http://localhost:8420/sessions/{owner_id}/create" \
 - `message`（必填，非空字符串）：首条消息内容。**必须以 context block 起手**（见 §"派发消息体规范"），子 session 是新 Claude 进程，不带任何当前会话上下文，message 是它唯一的入口
 - `task_id`（可选，字符串）：写入 store 元数据，供 GET `/sessions` 回读。一般填飞书 record_id 用作回飞书表的反查键
 - `task_type`（可选，字符串）：`requirement` / `bug` / `hotfix` / `tech-requirement` 之一
-- `echo_chat_id`（可选，字符串）：子 session 处理完成后把结果回传到此 chat。**未传时默认 = owner 的 p2p chat_id**（即 `OWNER_ID`），owner 在自己的私聊里能直接看到子 session 的回报；回传消息自动带 `来自 {suffix} 的回复：\n` 前缀（沿用 multi-session 路由层规则，见 event-pipeline.md §3.5）。传空字符串 `""` 关闭回传（仅当调用方明确不希望 owner 看到回报时用）
+
+**回传行为（无需配置）**：子 session 处理完成后自动主动发一条消息到 owner 飞书私聊（即 `OWNER_ID`），带 `来自 {suffix} 的回复：\n` 前缀。判定依据是事件 message_id 形如 `internal-*`（控制平面虚构）→ 走主动 send；非 `internal-*`（飞书真实事件）→ 走原 quote-reply。两条路互不干扰，本 skill 调用方不需要传任何字段控制。
 
 **响应**：
 - **200**：`{"session_id": "p2p_...", "status": "PROCESSING", "created": true}`——派发已接受
-- **400**：body 非 JSON / suffix 非法 / message 缺失或非字符串 / task_id / task_type / echo_chat_id 类型错误。读 `error` 字段修正重试
+- **400**：body 非 JSON / suffix 非法 / message 缺失或非字符串 / task_id / task_type 类型错误。读 `error` 字段修正重试
 - **409**：`session_id` 已存在。调用方应改用 POST `/message` 复用
 - **503**：dispatcher 未注入（avatar 服务启动时未挂好）。通知运维，不重试
 
@@ -123,25 +123,26 @@ curl -s -X POST "http://localhost:8420/sessions/{owner_id}/create" \
 curl -s -X POST "http://localhost:8420/sessions/p2p_{owner_id}_req-homepage-jsonld-schema/message" \
   -H "Content-Type: application/json" \
   -d '{
-    "message": "<变化部分 + 期望动作，已交付字段可省，见下节>",
-    "echo_chat_id": "ou_8adc8aca7ad728142eb6669e5b13fb52"
+    "message": "<变化部分 + 期望动作，已交付字段可省，见下节>"
   }'
 ```
 
 **Body 字段**：
 - `message`（必填，非空字符串）：消息内容。续推到已接手的 session 时可省略已交付字段、只贴变化部分；首次派发到一个空 session 仍需要完整 context block
-- `echo_chat_id`（可选，字符串）：同 POST `/create`。**未传时沿用 session 当前已设的回传目标**（首次创建时设的、或上次 message 时改的）；想改回传目标在本次 message 里传新值即可；传空字符串 `""` 关闭回传
-- `suffix`（可选，字符串）：reader 回复前缀。control-plane 场景（`internal-*` message_id）reader 的 lark 侧副作用被 handler 屏蔽，此参数仅用于 `来自 {suffix} 的回复：` 前缀；不传则从 session_id 解析
+- `suffix`（可选，字符串）：仅用于 `来自 {suffix} 的回复：` 前缀；不传则从 session_id 解析
+
+**回传行为**：同 POST `/create`——session 完成 ResultMessage 后自动主动发到 owner 飞书私聊，带 suffix 前缀。无需配置。
 
 **响应**：
 - **200**：`{"session_id": "...", "status": "PROCESSING", "queued": true}`
-- **400**：body / message / echo_chat_id 不合法
+- **400**：body / message 不合法
 - **404**：`session_id` 不在 pool.list_sessions()。改用 POST `/create`，或确认 session_id 拼写
 - **409**：`pool.get_status(session_id) == "PROCESSING"`。session 正忙，别硬塞；等或告知用户稍后
 - **503**：dispatcher 未注入
 
 **语义细节**：
-- `sender_id` 内部写死为 `OWNER_ID`（只有主 agent 能调控制平面），这会影响 Claude prompt 中的角色字段；飞书侧 reply 仍被 `internal-*` 守卫屏蔽（避免对虚构 message_id 调 lark-cli 失败），但 echo_chat_id 路径下的主动 send 不受影响
+- `sender_id` 内部写死为 `OWNER_ID`（只有主 agent 能调控制平面），这会影响 Claude prompt 中的角色字段
+- reader 见到 `internal-*` 形式的 message_id 时跳过原 quote-reply（虚构 ID 不能 reply），改走主动 send 到 owner p2p
 - 404 / 409 检查与 dispatch 非原子，并发场景下可能两条同时通过。调用方侧串行化
 
 **何时用**：目标 session 已存在且不在 PROCESSING，需要续推（step N → step N+1、补一条澄清、追问结果）。
@@ -276,7 +277,7 @@ slug 自身已能描述任务时可省前缀。**保留前缀不用作业务 slu
 
 | 响应码 | 场景 | 动作 |
 |--------|------|------|
-| `400` | body 非 JSON / suffix 不合白名单 / message 为空 / 可选字段类型错（含 echo_chat_id） | 读 `error` 字段修正后重试 |
+| `400` | body 非 JSON / suffix 不合白名单 / message 为空 / 可选字段类型错 | 读 `error` 字段修正后重试 |
 | `404`（message） | `session_id` 不在 store | 改用 POST `/create`，或核对 session_id 拼写 |
 | `409`（create） | session 已存在 | 改用 POST `/message` 复用 |
 | `409`（message） | session 正在 PROCESSING | 告知用户"该 session 已忙"，等空闲后重试；**不**硬塞第二次 |
@@ -294,14 +295,14 @@ slug 自身已能描述任务时可省前缀。**保留前缀不用作业务 slu
    - 表里有、控制平面 `CREATED` 或 `READY` → 候选 "续推（POST /message）"
    - 表里有、控制平面 `PROCESSING` → 跳过本轮，标注"该 session 正在跑"
 4. **向用户汇报 plan**（不直接派发）：列出打算 create 哪些（含拟定 slug）、message 哪些、跳过哪些，用 `AskUserQuestion` 让用户勾选确认
-5. **用户确认后串行派发**：对每条 create 组装完整 context block（最小字段集），对 message 组装变化部分；同一 suffix / session_id 一次只发一条，检查响应后再发下一条；echo_chat_id 默认走 owner p2p（让 owner 自己看到回报）
+5. **用户确认后串行派发**：对每条 create 组装完整 context block（最小字段集），对 message 组装变化部分；同一 suffix / session_id 一次只发一条，检查响应后再发下一条。子 session 处理完后回报会自动出现在 owner 飞书 p2p（带前缀），无需额外配置
 
 ### 场景 B：用户明确说"把 X 推一下"
 
 1. **解析 X**——X 可能是 slug（`homepage-schema`）、record_id（`recvhqUZJ2eZAI`）、或自然语言描述。先派 scrum-master 在飞书表里定位到那条记录，拿到完整字段（含 task-dir、Wiki、STATUS 摘要、最近一条飞书原文）
 2. **查 session 状态**——curl `GET /sessions/{owner_id}`，按 `task_id == record_id` 或 `session_id` 含已知 slug 找条目
 3. **按状态分支**：
-   - 没找到（视为 `NONE`）→ `AskUserQuestion` 让用户确认：拟定 slug、context block 内容、echo_chat_id 默认走 owner p2p；确认后 POST `/create`
+   - 没找到（视为 `NONE`）→ `AskUserQuestion` 让用户确认拟定 slug + context block 内容；确认后 POST `/create`
    - `CREATED` / `READY` → 组装变化部分 + 期望动作的简化 message，`AskUserQuestion` 确认后 POST `/message`
    - `PROCESSING` → 告诉用户"该 session 在跑，pending_count=N，建议等它跑完"；不派发
 4. **派发后**再 curl `GET /sessions/{owner_id}` 观察 status 从 PROCESSING 回到 READY；owner 会在飞书 p2p 看到子 session 的回传消息（带 `来自 {suffix} 的回复：` 前缀）
@@ -340,7 +341,7 @@ slug 自身已能描述任务时可省前缀。**保留前缀不用作业务 slu
 5. **suffix 不偷懒**——白名单严格、用业务 slug、长度受控；调用前自己本地校验过再发
 6. **派发后要观测**——200 只是"派发已接受"，真正确认 Claude 处理得靠后续 `GET /sessions` 看 status 翻转和 pending_count 变化
 7. **派发不下沉**——子 session 是新 Claude 进程，没有当前会话的上下文。POST `/create` 的 message 必须包含完整 context block（最小字段集见 §"派发消息体规范"）；偷懒省字段 = 子 session 跑偏 / 找不到 task-dir / 编路径
-8. **echo_chat_id 默认让 owner 看见**——不传时默认回传到 owner p2p，owner 在飞书能直接读到子 session 的回报；只有明确不希望 owner 看到时才传 `""` 关闭。这是把"派出去"和"看得到"绑在一起，避免"我派了一条出去但完全不知道它干了啥"
+8. **回传是内置行为，不要试图"配置"**——session 处理完后会自动主动发到 owner 飞书私聊（带 `来自 {suffix} 的回复：` 前缀）。本 skill 不接受 `echo_chat_id` 之类的字段控制目标——之前有过这种过度设计已被删除。如果未来真有需求发到群或第三方，再加新字段，**不要在 message body 里偷偷塞老字段**（server 会静默忽略未知字段）
 
 ## 示例对话片段
 
@@ -364,8 +365,8 @@ slug 自身已能描述任务时可省前缀。**保留前缀不用作业务 slu
    - REQ-3（推荐位修复）无 session，建议 POST `/create`，slug=`bug-recommend-empty`、首条 message 为完整 context block
 4. `AskUserQuestion`：勾选 REQ-1 + REQ-3，确认 message 内容（context block 已组装好预览给用户）
 5. 用户确认后按顺序 curl POST：
-   - REQ-1：POST `/message`，body 含变化部分 + 期望动作；echo_chat_id 默认 = owner p2p
-   - REQ-3：POST `/create`，body 含完整 context block + slug + task_id + echo_chat_id 默认
+   - REQ-1：POST `/message`，body 含变化部分 + 期望动作
+   - REQ-3：POST `/create`，body 含完整 context block + slug + task_id
 6. 查 `GET /sessions` 验证 status 翻转；告诉用户子 session 的回报会出现在 owner p2p 飞书里
 
 ### 例 2：单点推进
@@ -384,6 +385,6 @@ slug 自身已能描述任务时可省前缀。**保留前缀不用作业务 slu
    [STATUS 摘要] 见 tasks/req-homepage-jsonld-schema/STATUS.md（你已有上下文）
    请推进到 step 10：检查 Wiki node_token 是否同步、通过 scrum-master 派 R4 通知。完成后回报。
    ```
-4. `AskUserQuestion`：建议消息预览给用户 + 提示"echo_chat_id 默认走 owner p2p，回报会出现在你的飞书私聊"——用户选"确认派发"
-5. `curl -s -X POST http://localhost:8420/sessions/p2p_ou_xxx_req-homepage-jsonld-schema/message -H "Content-Type: application/json" -d '{"message": "...", "echo_chat_id": "ou_xxx"}'`，返回 200 `status=PROCESSING`
+4. `AskUserQuestion`：建议消息预览给用户 + 提示"回报会出现在你的飞书私聊"——用户选"确认派发"
+5. `curl -s -X POST http://localhost:8420/sessions/p2p_ou_xxx_req-homepage-jsonld-schema/message -H "Content-Type: application/json" -d '{"message": "..."}'`，返回 200 `status=PROCESSING`
 6. 回报用户："homepage-schema 已派发，status=PROCESSING；子 session 回报会带 `来自 req-homepage-jsonld-schema 的回复：` 前缀出现在你的飞书 p2p。"
