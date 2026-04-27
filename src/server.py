@@ -384,6 +384,10 @@ async def _handle_create_session(request):
     metrics = request.app["metrics"]
     dispatcher = request.app.get("dispatcher")
 
+    # 只允许 owner 本人调用写端点
+    if owner_id != OWNER_ID:
+        return _json({"error": "dispatch is owner-only"}, status=403)
+
     # 校验 dispatcher 注入（测试/开发场景下可能未配置）
     if dispatcher is None:
         return _json({"error": "dispatcher unavailable"}, status=503)
@@ -509,6 +513,10 @@ async def _handle_send_message(request):
     pool = request.app["pool"]
     metrics = request.app["metrics"]
     dispatcher = request.app.get("dispatcher")
+
+    # 只允许 owner 名下的 session 被调用
+    if not _owner_matches(session_id, OWNER_ID):
+        return _json({"error": "dispatch is owner-only"}, status=403)
 
     # 503: dispatcher 未注入
     if dispatcher is None:

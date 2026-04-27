@@ -1,5 +1,6 @@
 """HTTP API server 测试"""
 
+import unittest.mock
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 from aiohttp.test_utils import AioHTTPTestCase, unittest_run_loop
@@ -194,6 +195,12 @@ class TestCreateSession(AioHTTPTestCase):
     """POST /sessions/{owner_id}/create — dispatch 控制面写端点"""
 
     async def get_application(self):
+        import src.server as _srv
+        # patch OWNER_ID 为测试用 owner，使路径 /sessions/ou_test/create 能通过校验
+        self._owner_patcher = unittest.mock.patch.object(_srv, "OWNER_ID", "ou_test")
+        self._owner_patcher.start()
+        self.addCleanup(self._owner_patcher.stop)
+
         self.mock_pool = MagicMock()
         self.mock_pool.list_sessions.return_value = {}  # 默认：无会话
         self.mock_pool.get_status = MagicMock(return_value="PROCESSING")
@@ -346,6 +353,11 @@ class TestCreateSessionNoDispatcher(AioHTTPTestCase):
     """dispatcher 未注入时 → 503"""
 
     async def get_application(self):
+        import src.server as _srv
+        self._owner_patcher = unittest.mock.patch.object(_srv, "OWNER_ID", "ou_test")
+        self._owner_patcher.start()
+        self.addCleanup(self._owner_patcher.stop)
+
         self.mock_pool = MagicMock()
         self.mock_pool.list_sessions.return_value = {}
         self.mock_pool.active_client_count.return_value = 0
@@ -370,6 +382,12 @@ class TestSendMessage(AioHTTPTestCase):
     """POST /sessions/{session_id}/message — 向已存在的 session 追加消息"""
 
     async def get_application(self):
+        import src.server as _srv
+        # patch OWNER_ID 为测试用 owner，使 p2p_ou_test_* 路径能通过 owner 归属校验
+        self._owner_patcher = unittest.mock.patch.object(_srv, "OWNER_ID", "ou_test")
+        self._owner_patcher.start()
+        self.addCleanup(self._owner_patcher.stop)
+
         self.mock_pool = MagicMock()
         # 默认 session 存在，状态 READY（可接收消息）
         self.mock_pool.list_sessions.return_value = {
@@ -536,10 +554,115 @@ class TestSendMessage(AioHTTPTestCase):
             assert kwargs.get("suffix") is None
 
 
+class TestCreateSessionOwnerGuard(AioHTTPTestCase):
+    """POST /sessions/{owner_id}/create — owner_id path 参数校验"""
+
+    async def get_application(self):
+        self.mock_pool = MagicMock()
+        self.mock_pool.list_sessions.return_value = {}
+        self.mock_pool.get_status = MagicMock(return_value="PROCESSING")
+        self.mock_pool.pending_count = MagicMock(return_value=1)
+        self.mock_pool.active_client_count.return_value = 0
+        self.mock_pool.max_active_clients = 5
+        self.mock_pool._store = MagicMock()
+        self.mock_pool._store.load_all = MagicMock(return_value={})
+        self.mock_pool._store.save = MagicMock()
+
+        from src.config import OWNER_ID
+        self.owner_id = OWNER_ID
+
+        self.metrics = MetricsCollector()
+        self.mock_dispatcher = MagicMock()
+        self.mock_dispatcher.dispatch = AsyncMock()
+
+        return _create_app(self.mock_pool, self.metrics, dispatcher=self.mock_dispatcher)
+
+    @unittest_run_loop
+    async def test_create_rejects_non_owner(self):
+        """path 上的 owner_id != OWNER_ID → 403，body 含 error"""
+        body = {"suffix": "REQ-1", "message": "hi"}
+        resp = await self.client.post("/sessions/ou_other_intruder/create", json=body)
+        assert resp.status == 403
+        data = await resp.json()
+        assert "error" in data
+        # dispatcher 不应被调用
+        assert self.mock_dispatcher.dispatch.await_count == 0
+
+    @unittest_run_loop
+    async def test_create_accepts_owner(self):
+        """path 上的 owner_id == OWNER_ID → 正常处理（200）"""
+        body = {"suffix": "REQ-999", "message": "继续"}
+        resp = await self.client.post(
+            f"/sessions/{self.owner_id}/create", json=body
+        )
+        assert resp.status == 200
+        data = await resp.json()
+        assert data["created"] is True
+        assert self.mock_dispatcher.dispatch.await_count == 1
+
+
+class TestSendMessageOwnerGuard(AioHTTPTestCase):
+    """POST /sessions/{session_id}/message — session 归属 owner 校验"""
+
+    async def get_application(self):
+        from src.config import OWNER_ID
+        self.owner_id = OWNER_ID
+        # 准备一个属于 owner 的 session 和一个不属于 owner 的 session
+        self.mock_pool = MagicMock()
+        self.mock_pool.list_sessions.return_value = {
+            f"p2p_{OWNER_ID}_REQ-42": {"task_id": "REQ-42"},
+            "p2p_ou_other_REQ-1": {"task_id": "REQ-1"},
+        }
+        self.mock_pool.get_status = MagicMock(return_value="READY")
+        self.mock_pool.pending_count = MagicMock(return_value=0)
+        self.mock_pool.active_client_count.return_value = 0
+        self.mock_pool.max_active_clients = 5
+        self.mock_pool._store = MagicMock()
+        self.mock_pool._store.load_all = MagicMock(return_value={})
+        self.mock_pool._store.save = MagicMock()
+
+        self.metrics = MetricsCollector()
+        self.mock_dispatcher = MagicMock()
+        self.mock_dispatcher.dispatch = AsyncMock()
+
+        return _create_app(self.mock_pool, self.metrics, dispatcher=self.mock_dispatcher)
+
+    @unittest_run_loop
+    async def test_message_rejects_non_owner_session(self):
+        """session_id 不属于 OWNER_ID（如 p2p_ou_other_xxx）→ 403"""
+        body = {"message": "hi"}
+        resp = await self.client.post(
+            "/sessions/p2p_ou_other_REQ-1/message", json=body
+        )
+        assert resp.status == 403
+        data = await resp.json()
+        assert "error" in data
+        # dispatcher 不应被调用
+        assert self.mock_dispatcher.dispatch.await_count == 0
+
+    @unittest_run_loop
+    async def test_message_accepts_owner_session(self):
+        """session_id 属于 OWNER_ID → 正常处理（200 或 404 正常状态）"""
+        from src.config import OWNER_ID
+        body = {"message": "继续推进"}
+        resp = await self.client.post(
+            f"/sessions/p2p_{OWNER_ID}_REQ-42/message", json=body
+        )
+        # 属于 owner 的 session：通过校验，正常走到业务逻辑 → 200
+        assert resp.status == 200
+        data = await resp.json()
+        assert data.get("queued") is True
+
+
 class TestSendMessageNoDispatcher(AioHTTPTestCase):
     """dispatcher 未注入时 → 503"""
 
     async def get_application(self):
+        import src.server as _srv
+        self._owner_patcher = unittest.mock.patch.object(_srv, "OWNER_ID", "ou_test")
+        self._owner_patcher.start()
+        self.addCleanup(self._owner_patcher.stop)
+
         self.mock_pool = MagicMock()
         self.mock_pool.list_sessions.return_value = {
             "p2p_ou_test_REQ-12345": {"task_id": "REQ-12345"},
@@ -571,6 +694,11 @@ class TestCreateSessionEchoChatId(AioHTTPTestCase):
     """POST /sessions/{owner_id}/create — echo_chat_id 字段处理"""
 
     async def get_application(self):
+        import src.server as _srv
+        self._owner_patcher = unittest.mock.patch.object(_srv, "OWNER_ID", "ou_test")
+        self._owner_patcher.start()
+        self.addCleanup(self._owner_patcher.stop)
+
         self.mock_pool = MagicMock()
         self.mock_pool.list_sessions.return_value = {}
         self.mock_pool.get_status = MagicMock(return_value="PROCESSING")
@@ -588,12 +716,12 @@ class TestCreateSessionEchoChatId(AioHTTPTestCase):
 
     @unittest_run_loop
     async def test_create_default_echo_owner_id(self):
-        """不传 echo_chat_id → store 里写入 OWNER_ID"""
-        from src.config import OWNER_ID
+        """不传 echo_chat_id → store 里写入 OWNER_ID（即 src.server.OWNER_ID，
+        本测试 class 已 patch 为 "ou_test"）"""
         body = {"suffix": "REQ-1", "message": "hi"}
         resp = await self.client.post("/sessions/ou_test/create", json=body)
         assert resp.status == 200
-        # store.save 应被调用，且含 echo_chat_id=OWNER_ID
+        # store.save 应被调用，且含 echo_chat_id == patched OWNER_ID（"ou_test"）
         save_calls = self.mock_pool._store.save.call_args_list
         echo_saves = [
             c for c in save_calls
@@ -601,7 +729,8 @@ class TestCreateSessionEchoChatId(AioHTTPTestCase):
         ]
         assert len(echo_saves) >= 1
         saved_val = echo_saves[-1].args[1]["echo_chat_id"]
-        assert saved_val == OWNER_ID
+        # OWNER_ID 在本 class 已 patch 为 "ou_test"
+        assert saved_val == "ou_test"
 
     @unittest_run_loop
     async def test_create_explicit_echo(self):
@@ -646,6 +775,11 @@ class TestSendMessageEchoChatId(AioHTTPTestCase):
     """POST /sessions/{session_id}/message — echo_chat_id 字段处理"""
 
     async def get_application(self):
+        import src.server as _srv
+        self._owner_patcher = unittest.mock.patch.object(_srv, "OWNER_ID", "ou_test")
+        self._owner_patcher.start()
+        self.addCleanup(self._owner_patcher.stop)
+
         self.mock_pool = MagicMock()
         self.mock_pool.list_sessions.return_value = {
             "p2p_ou_test_REQ-12345": {"task_id": "REQ-12345", "echo_chat_id": "ou_echo_a"},
